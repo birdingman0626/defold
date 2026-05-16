@@ -1,0 +1,130 @@
+name: Fork build engine
+
+# Fork-only CI for birdingman0626/defold. Validates that the engine
+# still compiles on a stripped-down workflow that doesn't depend on
+# Defold's internal S3 / notarization / Slack secrets. The upstream
+# `CI - Main` workflow fails on fork pushes because those secrets
+# don't exist here.
+#
+# Goal: keep this green for `arm64-android` (the closest analogue to
+# the upcoming `arm64-ohos` work) so any engine-side change can be
+# validated before pushing OHOS-specific patches.
+
+on:
+  push:
+    branches:
+      - dev
+      - ohos/**
+    paths:
+      - 'engine/**'
+      - 'com.dynamo.cr/**'
+      - 'build_tools/**'
+      - 'scripts/**'
+      - 'share/**'
+      - 'ci/**'
+      - '.github/workflows/fork-build.yml'
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "Target platform"
+        required: true
+        default: "arm64-android"
+        type: choice
+        options:
+          - "arm64-android"
+          - "armv7-android"
+          - "arm64-ohos"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ["${{ github.event.inputs.platform || 'arm64-android' }}"]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Cache Defold downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.dcache
+          key: ${{ runner.os }}-${{ matrix.platform }}-dcache-${{ hashFiles('build_tools/sdk.py') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.platform }}-dcache-
+            ${{ runner.os }}-dcache-
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Install CMake
+        uses: lukka/get-cmake@latest
+
+      - name: Set up Android SDK + NDK
+        id: setup-ndk
+        if: contains(matrix.platform, 'android') || contains(matrix.platform, 'ohos')
+        # OHOS shares the Android NDK path setup model in our build
+        # system; even though we'd switch to OHOS_NDK_PATH later, the
+        # Android NDK install gives us the underlying Linux clang
+        # toolchain that some build steps assume is present.
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r25b
+          add-to-path: false
+
+      - name: Set NDK env
+        if: contains(matrix.platform, 'android') || contains(matrix.platform, 'ohos')
+        run: |
+          echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
+
+      - name: Install OHOS command-line-tools
+        if: contains(matrix.platform, 'ohos')
+        # Public mirror of OHOS Native SDK. Required for the
+        # arm64-ohos clang + sysroot.
+        run: |
+          mkdir -p $HOME/ohos
+          # The public OHOS SDK download endpoint changes occasionally;
+          # adjust this URL if the build fails at this step. For now
+          # we trust the env var if pre-set in repo settings.
+          if [ -n "$OHOS_SDK_URL" ]; then
+            curl -L "$OHOS_SDK_URL" -o /tmp/ohos.zip
+            unzip -q /tmp/ohos.zip -d $HOME/ohos
+            echo "OHOS_NDK_PATH=$HOME/ohos/native"        >> $GITHUB_ENV
+            echo "OHOS_NDK_BIN_PATH=$HOME/ohos/native/llvm/bin" >> $GITHUB_ENV
+            echo "OHOS_NDK_SYSROOT=$HOME/ohos/native/sysroot"   >> $GITHUB_ENV
+          else
+            echo "::warning::OHOS_SDK_URL repo secret not set — arm64-ohos build will fail at compile step. Set it to a downloadable OHOS native SDK zip."
+          fi
+
+      - name: Install dependencies (Linux deps + Python wheels)
+        run: ci/ci.sh install --platform=${{ matrix.platform }}
+
+      - name: Build engine
+        # `--skip-tests --skip-builtins --skip-docs` mirror upstream's
+        # android job. No `--archive` => no S3 upload (we don't have
+        # the secret on this fork).
+        run: |
+          ci/ci.sh --platform=${{ matrix.platform }} \
+                   --skip-tests --skip-builtins --skip-docs \
+                   engine
+
+      - name: Stop Gradle Daemon
+        if: always()
+        run: com.dynamo.cr/com.dynamo.cr.bob/gradlew --stop || true
