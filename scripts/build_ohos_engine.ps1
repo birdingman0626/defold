@@ -25,7 +25,7 @@ param(
     [string]$OhosNdk   = 'D:\DevTools\command-line-tools\sdk\default\openharmony\native',
     [string]$DefoldRoot,
     [string]$DynamoHome,
-    [ValidateSet('install_ext', 'check_sdk', 'build_engine')]
+    [ValidateSet('install_ext', 'check_sdk', 'build_engine', 'build_external')]
     [string]$Step = 'build_engine'
 )
 

@@ -265,30 +265,40 @@ After:
   `ShaderProgramBuilder.main()` NPEs because the returned set is
   null, then `addAll(...)` blows up.
 
-### 2.20 Remaining link blocker — 3rd-party libs
-`PACKAGES_OHOS_64 = []` means we don't ship arm64-ohos prebuilts
-of the engine's required static libraries. The dmengine link step
-fails with:
-```
-ld.lld: error: unable to find library -lBulletDynamics
-ld.lld: error: unable to find library -lBulletCollision
-ld.lld: error: unable to find library -lLinearMath
-ld.lld: error: unable to find library -lbox2d_defold
-ld.lld: error: unable to find library -lluajit-5.1
-ld.lld: error: unable to find library -ltremolo
-ld.lld: error: unable to find library -ldmglfw
-```
-Each needs cross-compiling from source against the OHOS NDK +
-packaging as `packages/<name>-arm64-ohos.tar.gz`. Estimated effort:
-- bullet-2.77 (CMake, straightforward): 2-4h
-- box2d_defold (Defold's box2d fork, CMake): 1-2h
-- luajit-2.1.0 (most complex; needs cross-compile dance): 4-8h
-- tremolo (Vorbis decoder, makefile): 1-2h
-- dmglfw — see §3, this is the GLFW backend port (still placeholder)
+### 2.20 dmengine.so for arm64-ohos: LINK SUCCEEDS
+Resolved all 7 `ld.lld: unable to find library` errors:
+- **bullet-2.77** (BulletDynamics/BulletCollision/LinearMath):
+  cross-compiled in-tree via `external/bullet3d/wscript` after
+  filtering `EXTERNAL_LIBS` to bullet3d+box2d_v2 only for OHOS
+  in `scripts/build.py:build_external`. 4.6 s build.
+- **box2d_defold-2.2.1**: same path via `external/box2d_v2/wscript`.
+  1.9 s build.
+- **tremolo-b0cb4d1**: cloned `github.com/defold/defold-tremolo`,
+  ran its `build.sh` with `CC=<NDK>/clang.exe -target
+  aarch64-linux-ohos --sysroot=<NDK>/sysroot`. Vanilla `-DONLY_C`
+  build (no ARM asm path needed for aarch64).
+- **dmglfw**: empty `libdmglfw.a` stub (OHOS bypasses GLFW
+  entirely via `platform_window_ohos.cpp`). Packaged as
+  `glfw-2.7.1-arm64-ohos.tar.gz` to match Defold's pre-existing
+  package naming.
+- **luajit-5.1**: gated off — `platform_supports_feature(plat,
+  'luajit', _)` returns False for arm64-ohos in `waf_dynamo.py`,
+  which routes `STLIB_LUA='lua'` (vanilla Lua, built in-tree from
+  `engine/lua/`). Cross-compiling LuaJIT properly from a Windows
+  host requires producing aarch64-pointer-size assembler with a
+  host clang — non-trivial and would block progress.
 
-Also a stray `--enable-auto-import` MinGW linker flag is being
-emitted somewhere that ld.lld doesn't accept; needs to be filtered
-out of OHOS LINKFLAGS in `build_tools/waf_dynamo.py`.
+Also filtered the spurious MinGW `-Wl,--enable-auto-import` flag
+(baked in by waflib's `gcc_modifier_win32` when host is Windows)
+and reset `cprogram_PATTERN`/`cshlib_PATTERN` away from `.exe`/`.dll`
+to ELF-friendly defaults inside the OHOS branch of
+`set_cross_compile_args` (`build_tools/waf_dynamo.py`).
+
+Final artifact: `tmp/dynamo_home/bin/arm64-ohos/libdmengine.so`
+(23 MB, ELF64 AArch64 DYN). The ArkTS host shell at
+`defold_vn/ohos/entry/src/main/ets/pages/Index.ets` can now load
+this `.so` via the NAPI module to bring up the visual novel on
+the emulator (next step — see §3).
 
 ---
 

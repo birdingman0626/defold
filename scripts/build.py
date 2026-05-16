@@ -384,6 +384,9 @@ PACKAGES_OHOS_64 = [
     # NDK. See FORK_NOTES.md §2.20 / §3 / §4 for the build recipes.
     # 'glfw-2.7.1' here is an empty libdmglfw.a stub because OHOS
     # bypasses GLFW entirely (uses platform_window_ohos.cpp directly).
+    "tremolo-b0cb4d1",
+    "bullet-2.77",
+    "box2d_defold-2.2.1",
     "glfw-2.7.1",
 ]
 
@@ -1911,8 +1914,19 @@ class Configuration(object):
         flags = self._get_build_flags()
         flags['prefix'] = join(self.defold_root, 'packages')
         cmd = self._build_engine_cmd_waf(**flags)
-        args = cmd.split() + ['package']
-        for lib in EXTERNAL_LIBS:
+        # Same shlex round-trip as _build_engine_lib — preserves the
+        # quoted python interpreter path on Windows usernames with
+        # spaces.
+        import shlex
+        args = [a.strip('"') for a in shlex.split(cmd, posix=False)] + ['package']
+        # OHOS only needs bullet3d + box2d_v2 cross-compiled. glfw is
+        # stubbed (see PACKAGES_OHOS_64), opus + box2d (3.1.0) aren't
+        # referenced from the OHOS link line.
+        if self.target_platform == 'arm64-ohos':
+            libs = [lib for lib in EXTERNAL_LIBS if lib in ('bullet3d', 'box2d_v2')]
+        else:
+            libs = EXTERNAL_LIBS
+        for lib in libs:
             self._build_engine_lib(args, lib, platform=self.target_platform, directory='external')
 
     def archive_bob(self):

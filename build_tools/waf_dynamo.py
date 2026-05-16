@@ -93,6 +93,12 @@ def platform_supports_feature(platform, feature, data):
         return platform in ['arm64-linux']
     if feature == 'webgpu':
         return platform in ['wasm-web', 'wasm_pthread-web']
+    if feature == 'luajit':
+        # OHOS uses vanilla Lua until we cross-compile LuaJIT against
+        # the OHOS NDK (luajit's makefiles need a host clang capable
+        # of producing aarch64-shape pointer-size assembler — non-trivial
+        # to wire from a Windows host). See FORK_NOTES.md §2.20.
+        return platform not in ['arm64-ohos']
     return waf_dynamo_vendor.supports_feature(platform, feature, data)
 
 def platform_setup_tools(ctx, build_util):
