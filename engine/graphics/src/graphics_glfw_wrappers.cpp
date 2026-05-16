@@ -74,7 +74,7 @@ namespace dmGraphics
     android_app* GetNativeAndroidApp()      { return 0; }
 #endif
 
-#if defined(__linux__) && !defined(ANDROID)
+#if defined(__linux__) && !defined(ANDROID) && !defined(DM_PLATFORM_OHOS)
     Window GetNativeX11Window()             { return dmPlatform::GetX11Window(GetWindow(GetInstalledContext())); }
     GLXContext GetNativeX11GLXContext()     { return dmPlatform::GetX11GLXContext(GetWindow(GetInstalledContext())); }
 #else

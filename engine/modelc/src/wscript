@@ -14,10 +14,6 @@ def configure(conf):
         print("Skipping build of modelc for non host platform")
         return
 
-    if os.environ.get('SKIP_JNI_GEN'):
-        print("SKIP_JNI_GEN set; skipping gen_java.generate")
-        return
-
     dynamo_home = conf.env.DYNAMO_HOME
     includes = [os.getcwd(),
                 os.path.join(dynamo_home, 'sdk', 'include')]
@@ -39,9 +35,6 @@ def build(bld):
     # We only need this library in the editor and bob
     if not bld.env.IS_TARGET_DESKTOP:
         print("Skipping build of modelc for non host platform")
-        return
-
-    if os.environ.get('SKIP_JNI_GEN'):
         return
 
     modelc_sources = bld.path.ant_glob("*.cpp")

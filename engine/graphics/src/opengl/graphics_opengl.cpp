@@ -65,6 +65,16 @@
     #include <platform/platform_window_android.h>
     #include <EGL/egl.h>
     #include <GLES/gl.h>
+#elif defined(DM_PLATFORM_OHOS)
+    #include <platform/platform_window_ohos.h>
+    #include <EGL/egl.h>
+    // OHOS exposes GLES 3.2 natively (no runtime extension dance
+    // needed); pull in the full headers so glDispatchCompute,
+    // glBindImageTexture, glBindBufferBase, glDrawArraysInstanced
+    // etc. resolve at compile time instead of via the Android-style
+    // PFN_* macros.
+    #include <GLES3/gl32.h>
+    #include <GLES2/gl2ext.h>
 #else
     #include <GL/gl.h>
     #ifndef GLFW_NO_GLU
@@ -432,6 +442,19 @@ static void LogFrameBufferError(GLenum status)
     // Note: This is necessary for webgl and android to work since we don't load core functions with emsc,
     //       however we might want to do this the other way around perhaps? i.e special case for webgl
     //       and load functions like this for all other platforms.
+#if defined(DM_PLATFORM_OHOS)
+    // OHOS provides full GLES3.2 natively; redirect PFN_* aliases to the
+    // real symbols so the engine's runtime-detection checks (which
+    // compare PFN_* against 0) always see "supported".
+    #define PFN_glTexImage3D                glTexImage3D
+    #define PFN_glTexSubImage3D             glTexSubImage3D
+    #define PFN_glCompressedTexImage3D      glCompressedTexImage3D
+    #define PFN_glCompressedTexSubImage3D   glCompressedTexSubImage3D
+    #define PFN_glDrawArraysInstanced       glDrawArraysInstanced
+    #define PFN_glDrawElementsInstanced     glDrawElementsInstanced
+    #define PFN_glVertexAttribDivisor       glVertexAttribDivisor
+#endif
+
 #ifdef ANDROID
     typedef void (* DM_PFNGLTEXSUBIMAGE3DPROC) (GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const void *pixels);
     DM_PFNGLTEXSUBIMAGE3DPROC PFN_glTexSubImage3D = NULL;

@@ -81,7 +81,10 @@ def platform_supports_feature(platform, feature, data):
     if is_platform_private(platform):
         return waf_dynamo_vendor.supports_feature(platform, feature, data)
     if feature == 'vulkan' or feature == 'compute':
-        return platform not in ['wasm-web', 'wasm_pthread-web', 'x86_64-ios']
+        # OHOS technically has Vulkan but we're not wiring it for the
+        # first cut — keeps surface area smaller and matches the
+        # extender recipe (which only links EGL+GLESv2).
+        return platform not in ['wasm-web', 'wasm_pthread-web', 'x86_64-ios', 'arm64-ohos']
     if feature == 'dx12':
         return platform in ['x86_64-win32']
     if feature == 'opengl_compute':
