@@ -379,6 +379,17 @@ PACKAGES_EMSCRIPTEN=[
 
 PACKAGES_NODE_MODULES=["xhr2-0.1.0"]
 
+PACKAGES_OHOS_64 = [
+    # No prebuilt 3rd-party libs for arm64-ohos yet — we'd need to
+    # cross-compile each of luajit/tremolo/bullet/glfw/box2d/opus/
+    # harfbuzz/SheenBidi/libunibreak/SkriBidi against the OHOS NDK
+    # and package them as packages/<name>-arm64-ohos.tar.gz. Until
+    # that happens, install_ext for arm64-ohos succeeds at the
+    # common+host level (which gives us protoc) but the engine will
+    # fail to link without the third-party static libs.
+    # See FORK_NOTES.md §3 / §4.
+]
+
 PLATFORM_PACKAGES = {
     'win32':            PACKAGES_WIN32,
     'x86_64-win32':     PACKAGES_WIN32_64,
@@ -390,6 +401,7 @@ PLATFORM_PACKAGES = {
     'x86_64-ios':       PACKAGES_IOS_X86_64,
     'armv7-android':    PACKAGES_ANDROID,
     'arm64-android':    PACKAGES_ANDROID_64,
+    'arm64-ohos':       PACKAGES_OHOS_64,
     'wasm-web':         PACKAGES_EMSCRIPTEN,
     'wasm_pthread-web': PACKAGES_EMSCRIPTEN
 }
@@ -1671,7 +1683,14 @@ class Configuration(object):
         commands = "build install"
         if not self.incremental:
             commands = "distclean configure " + commands
-        return '%s %s/ext/bin/waf --prefix=%s %s %s %s %s %s' % (' '.join(self.get_python()), self.dynamo_home, prefix, skip_tests, skip_codesign, disable_ccache, generate_compile_commands, commands)
+        # Note: callers do `.split()` on this string. Anything that may
+        # contain spaces (interpreter path, dynamo_home, prefix) must
+        # come from a no-space location, otherwise CreateProcess fails
+        # with "%1 is not a valid Win32 application". Quote with shlex
+        # so it survives split() round-trip on Windows usernames like
+        # "Yumeng Xiao".
+        python = ' '.join('"%s"' % p if ' ' in p else p for p in self.get_python())
+        return '%s %s/ext/bin/waf --prefix=%s %s %s %s %s %s' % (python, self.dynamo_home, prefix, skip_tests, skip_codesign, disable_ccache, generate_compile_commands, commands)
 
     def _build_engine_lib_waf(self, args, lib, platform, skip_tests, directory):
         skip_build_tests = []
@@ -1830,7 +1849,15 @@ class Configuration(object):
         self._log("env DM_BOB_ROOTFOLDER=" + os.environ['DM_BOB_ROOTFOLDER'])
 
         cmd = self._build_engine_cmd_waf(**self._get_build_flags())
-        args = cmd.split()
+        # shlex.split honors quotes — needed when the python interpreter
+        # path contains spaces (typical on Windows usernames like
+        # "Yumeng Xiao"). posix=False so backslash path separators in
+        # Windows paths survive unescaped.
+        import shlex
+        args = shlex.split(cmd, posix=False)
+        # shlex with posix=False leaves the surrounding quotes attached;
+        # strip them so subprocess sees the raw arg.
+        args = [a.strip('"') for a in args]
         host = self.host
 
         # Make sure we build these for the host platform for the toolchain (bob light)
