@@ -57,12 +57,23 @@ $env:JAVA_HOME         = $JavaHome
 $env:OHOS_NDK_PATH     = $OhosNdk
 $env:OHOS_NDK_BIN_PATH = "$OhosNdk\llvm\bin"
 $env:OHOS_NDK_SYSROOT  = "$OhosNdk\sysroot"
-$env:PATH = "$DynamoHome\ext\bin\x86_64-win32;$JavaHome\bin;$env:OHOS_NDK_BIN_PATH;$env:PATH"
-# JNI gen step is Android-specific and breaks when the available
-# clang isn't binary-compatible with the host's MSVC headers. Skip
-# it — arm64-ohos doesn't need any JNI bridge anyway.
+$gitBin = 'C:\Program Files\Git\bin'  # provides sh.exe needed by bob-light copy.sh
+$scoopLlvmBin = Join-Path $env:USERPROFILE 'scoop\apps\llvm\current\bin'
+if (Test-Path "$scoopLlvmBin\clang.exe") {
+    # scoop-installed LLVM (clang 17+) is recent enough to parse
+    # VS Insiders 18 MSVC headers. Prepend so it wins over the
+    # OHOS NDK's older clang 15.0.4 for host-side gen_java AST dumps.
+    $env:PATH = "$scoopLlvmBin;$gitBin;$DynamoHome\ext\bin\x86_64-win32;$JavaHome\bin;$env:OHOS_NDK_BIN_PATH;$env:PATH"
+    $env:CLANG = "$scoopLlvmBin\clang.exe"
+    $env:CLANGPP = "$scoopLlvmBin\clang++.exe"
+} else {
+    $env:PATH = "$gitBin;$DynamoHome\ext\bin\x86_64-win32;$JavaHome\bin;$env:OHOS_NDK_BIN_PATH;$env:PATH"
+}
+# Skip the jni test library (it has its own clang-against-MSVC step
+# that's failure-prone). Other host libs (texc/modelc/shaderc) still
+# build because bob-light depends on their shader/model compilers.
 $env:SKIP_JNI_GEN = '1'
 
 Set-Location $DefoldRoot
 
-python scripts/build.py --platform=arm64-ohos --skip-tests --skip-builtins --skip-docs --skip-bob-light $Step -- --skip-build-tests
+python scripts/build.py --platform=arm64-ohos --skip-tests --skip-builtins --skip-docs $Step -- --skip-build-tests
