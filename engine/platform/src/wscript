@@ -51,6 +51,11 @@ def build(bld):
                 glfw_source += ['platform_window_glfw_android.cpp']
             elif bld.env.PLATFORM in ('x86_64-ios', 'arm64-ios'):
                 glfw_source += ['platform_window_glfw_ios.mm']
+            elif bld.env.PLATFORM == 'arm64-ohos':
+                # Placeholder. Returns NULL/0 for all dmPlatform::Ohos*
+                # functions until the real XComponent + EGL backend
+                # lands (FORK_NOTES.md §3).
+                glfw_source += ['platform_window_glfw_ohos.cpp']
 
         lib = bld.stlib(features = 'cxx c ddf',
                         includes = '.',
@@ -84,6 +89,7 @@ def build(bld):
     bld.install_files('${PREFIX}/include/platform', 'platform_window_osx.h')
     bld.install_files('${PREFIX}/include/platform', 'platform_window_win32.h')
     bld.install_files('${PREFIX}/include/platform', 'platform_window_linux.h')
+    bld.install_files('${PREFIX}/include/platform', 'platform_window_ohos.h')
 
     dmsdk_add_files(bld, '${PREFIX}/sdk/include/dmsdk', 'dmsdk')
 
