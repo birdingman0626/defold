@@ -15,6 +15,11 @@ def build(bld):
     elif 'android' in bld.env.PLATFORM:
         source += ' profiler_android.cpp'
         source += ' profiler_proc_utils.cpp'
+    elif 'ohos' in bld.env.PLATFORM:
+        # /proc-based CPU/memory sampling works on OHOS too (musl
+        # exposes the same /proc tree as Linux/Android).
+        source += ' profiler_linux.cpp'
+        source += ' profiler_proc_utils.cpp'
     elif 'linux' in bld.env.PLATFORM:
         source += ' profiler_linux.cpp'
         source += ' profiler_proc_utils.cpp'

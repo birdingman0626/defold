@@ -24,6 +24,12 @@ def build(bld):
         sig_handler = 'backtrace_libunwind_ndk.cpp'
         load_addrs = 'load_addrs_proc_smap.cpp'
         file_handler = 'file_posix.cpp'
+    elif 'ohos' in bld.env['PLATFORM']:
+        # OHOS exposes /proc and SIGSEGV similarly to Linux. The
+        # libunwind backtrace works on aarch64-musl too.
+        sig_handler = 'backtrace_libunwind_ndk.cpp'
+        load_addrs = 'load_addrs_proc_smap.cpp'
+        file_handler = 'file_posix.cpp'
     elif 'linux' in bld.env['PLATFORM']:
         sig_handler = 'backtrace_execinfo.cpp'
         load_addrs = 'load_addrs_proc_smap.cpp'

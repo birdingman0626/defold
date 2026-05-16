@@ -912,7 +912,11 @@ def apply_unit_test(self):
 @before('process_source')
 def apply_apk_test(self):
     build_util = create_build_utility(self.env)
-    if 'android' == build_util.get_target_os():
+    target_os = build_util.get_target_os()
+    if target_os == 'android' or target_os == 'ohos':
+        # OHOS engine is hosted by ArkTS like Android engine is
+        # hosted by NativeActivity — it ships as a .so (cshlib),
+        # not a stand-alone executable (cprogram).
         self.features.remove('cprogram')
         self.features.append('cshlib')
 

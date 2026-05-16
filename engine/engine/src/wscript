@@ -109,11 +109,14 @@ def build(bld):
 
     exported_symbols += graphics_lib_symbols
 
-    if 'android' in bld.env['PLATFORM']:
+    if 'android' in bld.env['PLATFORM'] or 'ohos' in bld.env['PLATFORM']:
+        # OHOS sysroot ships libunwind + libc++_static; we need both
+        # statically linked for matching arm64-android behavior.
         additional_libs.append('UNWIND')
         additional_libs.append('CPP_RUNTIME')
 
-    if bld.env['PLATFORM'] in ['win32', 'x86_64-win32', 'arm64-nx64', 'arm64-macos', 'x86_64-macos', 'arm64-ios', 'x86_64-ios', 'x86_64-xbone']:
+    if bld.env['PLATFORM'] in ['win32', 'x86_64-win32', 'arm64-nx64', 'arm64-macos', 'x86_64-macos', 'arm64-ios', 'x86_64-ios', 'x86_64-xbone', 'arm64-ohos']:
+        # OHOS uses OpenSL ES via device_opensl.cpp, no OpenAL needed.
         sound_lib  = 'SOUND'
     else:
         sound_lib = 'SOUND OPENAL'
@@ -215,7 +218,7 @@ def build(bld):
         obj.env.append_value('LINKFLAGS', ['/SUBSYSTEM:WINDOWS', '/ENTRY:mainCRTStartup', 'Psapi.lib'])
 
     additional_libs = []
-    if bld.env['PLATFORM'] in ('armv7-android', 'arm64-android', 'x86_64-macos'):
+    if bld.env['PLATFORM'] in ('armv7-android', 'arm64-android', 'x86_64-macos', 'arm64-ohos'):
         additional_libs += ['UNWIND']
 
     if bld.env['PLATFORM'] in ('x86_64-xbone', 'x86_64-ps4', 'x86_64-ps5'):
