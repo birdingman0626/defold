@@ -918,7 +918,7 @@ def check_defold_sdk(sdkfolder, host_platform, platform, verbose=False):
         folders.append(get_android_sdk_path(sdkfolder))
         folders.append(get_android_ndk_path(sdkfolder))
 
-    elif platform == 'arm64-ohos':
+    elif platform in ('arm64-ohos', 'x86_64-ohos'):
         ndk_path = os.environ.get('OHOS_NDK_PATH')
         if ndk_path:
             folders.append(ndk_path)
@@ -969,7 +969,7 @@ def check_local_sdk(platform, verbose=False):
         ndkpath = get_android_local_ndk_path(platform, verbose)
         return path is not None and ndkpath is not None
 
-    elif platform == 'arm64-ohos':
+    elif platform in ('arm64-ohos', 'x86_64-ohos'):
         ndk_path = os.environ.get('OHOS_NDK_PATH')
         if not ndk_path or not os.path.exists(ndk_path):
             raise SDKException(
@@ -1018,7 +1018,7 @@ def _get_defold_sdk_info(sdkfolder, host_platform, platform):
         info['api']         = get_android_api_version(platform)
         info['clangname']   = get_android_clang_name(platform, info['api'])
 
-    elif platform == 'arm64-ohos':
+    elif platform in ('arm64-ohos', 'x86_64-ohos'):
         # OHOS native SDK isn't packaged into ~/.dcache like the
         # Android NDK; we resolve directly from env vars set by
         # the caller (extender launcher or CI workflow).
@@ -1079,7 +1079,7 @@ def _get_local_sdk_info(platform, verbose=False):
         info['api']         = get_android_api_version(platform)
         info['clangname']   = get_android_clang_name(platform, info['api'])
 
-    elif platform == 'arm64-ohos':
+    elif platform in ('arm64-ohos', 'x86_64-ohos'):
         ndk_path = os.environ['OHOS_NDK_PATH']
         info['ndk']      = ndk_path
         info['bintools'] = os.environ.get('OHOS_NDK_BIN_PATH',

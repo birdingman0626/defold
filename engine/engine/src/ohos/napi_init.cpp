@@ -41,9 +41,11 @@ extern "C" {
     void OhosPlatform_ClearNativeSurface();
     void OhosPlatform_PushTouchEvent(int32_t id, int32_t phase, float x, float y);
 
-    // common/main.cpp ultimately calls engine_main; we route through
-    // it so we share lifecycle with the desktop main entry.
-    int engine_main(int argc, char* argv[]);
+    // engine_main.cpp exposes a C-linkage `ohos_engine_main` wrapper
+    // around the C++-linkage `engine_main`. We need the C name so
+    // the dlopen-driven dynamic linker can find it without C++
+    // mangling.
+    int ohos_engine_main(int argc, char* argv[]);
     void OhosNapi_RegisterPlatform() {}      // dmPlatform calls into us; nothing to do for now
     void OhosNapi_SetActiveSurface(void* native_window, uint32_t width, uint32_t height)
     {
@@ -122,7 +124,7 @@ static void* EngineThreadMain(void* arg)
     (void)arg;
     char arg0[] = "dmengine";
     char* argv[] = { arg0, NULL };
-    int rc = engine_main(1, argv);
+    int rc = ohos_engine_main(1, argv);
     dmLogInfo("OHOS: engine_main exited with code %d", rc);
     g_engine_running = 0;
     return NULL;

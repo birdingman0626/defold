@@ -157,4 +157,14 @@ int engine_main(int argc, char *argv[])
     return EngineMain(argc, argv);
 }
 
+#if defined(DM_PLATFORM_OHOS)
+// OHOS NAPI bridge resolves the engine entry by C-linkage symbol
+// name. Emit a thin alias so napi_init.cpp's
+// `extern "C" int engine_main(...)` resolves at dlopen time.
+extern "C" int ohos_engine_main(int argc, char *argv[])
+{
+    return engine_main(argc, argv);
+}
+#endif
+
 #endif

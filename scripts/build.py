@@ -45,7 +45,7 @@ BASE_PLATFORMS = [  'x86_64-linux', 'arm64-linux',
                     'win32', 'x86_64-win32',
                     'x86_64-ios', 'arm64-ios',
                     'armv7-android', 'arm64-android',
-                    'arm64-ohos',
+                    'arm64-ohos', 'x86_64-ohos',
                     'wasm-web', 'wasm_pthread-web']
 
 _CMAKE_FEATURE_FLAG_MAP = {
@@ -390,6 +390,16 @@ PACKAGES_OHOS_64 = [
     "glfw-2.7.1",
 ]
 
+PACKAGES_OHOS_X86_64 = [
+    # x86_64-ohos prebuilts — same recipe as arm64-ohos but with the
+    # OHOS NDK targeting x86_64-linux-ohos. The OpenHarmony emulator
+    # boots an x86_64 image, so we ship this in parallel.
+    "tremolo-b0cb4d1",
+    "bullet-2.77",
+    "box2d_defold-2.2.1",
+    "glfw-2.7.1",
+]
+
 PLATFORM_PACKAGES = {
     'win32':            PACKAGES_WIN32,
     'x86_64-win32':     PACKAGES_WIN32_64,
@@ -402,6 +412,7 @@ PLATFORM_PACKAGES = {
     'armv7-android':    PACKAGES_ANDROID,
     'arm64-android':    PACKAGES_ANDROID_64,
     'arm64-ohos':       PACKAGES_OHOS_64,
+    'x86_64-ohos':      PACKAGES_OHOS_X86_64,
     'wasm-web':         PACKAGES_EMSCRIPTEN,
     'wasm_pthread-web': PACKAGES_EMSCRIPTEN
 }
@@ -1922,7 +1933,7 @@ class Configuration(object):
         # OHOS only needs bullet3d + box2d_v2 cross-compiled. glfw is
         # stubbed (see PACKAGES_OHOS_64), opus + box2d (3.1.0) aren't
         # referenced from the OHOS link line.
-        if self.target_platform == 'arm64-ohos':
+        if self.target_platform in ('arm64-ohos', 'x86_64-ohos'):
             libs = [lib for lib in EXTERNAL_LIBS if lib in ('bullet3d', 'box2d_v2')]
         else:
             libs = EXTERNAL_LIBS

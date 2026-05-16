@@ -84,7 +84,7 @@ def platform_supports_feature(platform, feature, data):
         # OHOS technically has Vulkan but we're not wiring it for the
         # first cut — keeps surface area smaller and matches the
         # extender recipe (which only links EGL+GLESv2).
-        return platform not in ['wasm-web', 'wasm_pthread-web', 'x86_64-ios', 'arm64-ohos']
+        return platform not in ['wasm-web', 'wasm_pthread-web', 'x86_64-ios', 'arm64-ohos', 'x86_64-ohos']
     if feature == 'dx12':
         return platform in ['x86_64-win32']
     if feature == 'opengl_compute':
@@ -96,9 +96,10 @@ def platform_supports_feature(platform, feature, data):
     if feature == 'luajit':
         # OHOS uses vanilla Lua until we cross-compile LuaJIT against
         # the OHOS NDK (luajit's makefiles need a host clang capable
-        # of producing aarch64-shape pointer-size assembler — non-trivial
-        # to wire from a Windows host). See FORK_NOTES.md §2.20.
-        return platform not in ['arm64-ohos']
+        # of producing the target-shape pointer-size assembler —
+        # non-trivial to wire from a Windows host). See FORK_NOTES.md
+        # §2.20.
+        return platform not in ['arm64-ohos', 'x86_64-ohos']
     return waf_dynamo_vendor.supports_feature(platform, feature, data)
 
 def platform_setup_tools(ctx, build_util):
@@ -644,10 +645,11 @@ def default_flags(self):
                 '-Wl,--build-id=uuid'] + getAndroidLinkFlags(target_arch))
     elif TargetOS.OHOS == target_os:
         # OpenHarmony / HarmonyOS Next native toolchain.
-        # Targets aarch64-unknown-linux-ohos with musl libc; clang lives
-        # inside the OHOS Native SDK distributed by OpenHarmony.
+        # Targets {aarch64,x86_64}-linux-ohos with musl libc; clang
+        # lives inside the OHOS Native SDK distributed by OpenHarmony.
         sysroot  = self.sdkinfo['sysroot']
         bintools = self.sdkinfo['bintools']
+        ohos_triple = 'x86_64-linux-ohos' if target_arch == 'x86_64' else 'aarch64-linux-ohos'
 
         for f in ['CFLAGS', 'CXXFLAGS']:
             self.env.append_value(f, [
@@ -655,7 +657,7 @@ def default_flags(self):
                 '-Wall', '-fpic', '-ffunction-sections', '-fdata-sections',
                 '-fstack-protector', '-fomit-frame-pointer',
                 '-fno-strict-aliasing', '-fno-exceptions', '-funwind-tables',
-                '-target', 'aarch64-linux-ohos',
+                '-target', ohos_triple,
                 '--sysroot=%s' % sysroot,
                 '-D__MUSL__', '-DDM_PLATFORM_OHOS'])
             if f == 'CXXFLAGS':
@@ -664,7 +666,7 @@ def default_flags(self):
         self.env.append_value('DEFINES', ['DM_NO_SYSTEM_FUNCTION'])
 
         self.env.append_value('LINKFLAGS', [
-            '-target', 'aarch64-linux-ohos',
+            '-target', ohos_triple,
             '--sysroot=%s' % sysroot,
             '-static-libstdc++',
             '-Wl,--gc-sections',
@@ -2192,9 +2194,12 @@ def detect(conf):
     elif TargetOS.ANDROID == target_os:
         conf.env['LIB_OPENGL'] = ['EGL', 'GLESv1_CM', 'GLESv2']
     elif TargetOS.OHOS == target_os:
-        # OHOS ships EGL + GLESv2 (no GLESv1_CM). Also link the NAPI
-        # + XComponent + hilog + native-window libs the engine needs.
-        conf.env['LIB_OPENGL'] = ['EGL', 'GLESv2', 'ace_napi.z', 'ace_ndk.z', 'hilog_ndk.z', 'native_window']
+        # OHOS ships EGL + GLESv2 + GLESv3 (no GLESv1_CM). GLESv3
+        # carries glBindVertexArray and the rest of the gles3.0/3.1
+        # symbols the engine references; without it dlopen fails to
+        # relocate libdmengine.so. Also link NAPI + XComponent +
+        # hilog + native-window libs the engine needs.
+        conf.env['LIB_OPENGL'] = ['EGL', 'GLESv2', 'GLESv3', 'ace_napi.z', 'ace_ndk.z', 'hilog_ndk.z', 'native_window']
     elif TargetOS.WINDOWS == target_os:
         conf.env['LINKFLAGS_OPENGL'] = ['opengl32.lib', 'glu32.lib']
     elif 'linux' == target_os:
@@ -2210,8 +2215,11 @@ def detect(conf):
     elif TargetOS.ANDROID == target_os:
         conf.env['LIB_OPENAL'] = ['OpenSLES']
     elif TargetOS.OHOS == target_os:
-        # OHOS uses OpenSL ES via the same -lOpenSLES name as Android.
-        conf.env['LIB_OPENAL'] = ['OpenSLES']
+        # OHOS uses the null sound device (see engine/sound/src/wscript)
+        # — libOpenSLES.so on the OHOS emulator is a header stub that
+        # doesn't actually export slCreateEngine, so linking it would
+        # break dlopen at runtime. No -l flags needed for null device.
+        conf.env['LIB_OPENAL'] = []
     elif TargetOS.LINUX == target_os:
         conf.env['LIB_OPENAL'] = ['openal']
 

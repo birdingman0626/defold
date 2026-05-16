@@ -26,7 +26,9 @@ param(
     [string]$DefoldRoot,
     [string]$DynamoHome,
     [ValidateSet('install_ext', 'check_sdk', 'build_engine', 'build_external')]
-    [string]$Step = 'build_engine'
+    [string]$Step = 'build_engine',
+    [ValidateSet('arm64-ohos', 'x86_64-ohos')]
+    [string]$Platform = 'arm64-ohos'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -84,4 +86,4 @@ $env:SKIP_JNI_GEN = '1'
 
 Set-Location $DefoldRoot
 
-python scripts/build.py --platform=arm64-ohos --skip-tests --skip-builtins --skip-docs $Step -- --skip-build-tests
+python scripts/build.py --platform=$Platform --skip-tests --skip-builtins --skip-docs $Step -- --skip-build-tests

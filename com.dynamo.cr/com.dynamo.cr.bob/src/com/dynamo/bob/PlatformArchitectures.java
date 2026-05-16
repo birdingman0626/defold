@@ -28,7 +28,7 @@ public enum PlatformArchitectures {
     PS4(new String[] {"x86_64-ps4"}, new String[] {"x86_64-ps4"}),
     PS5(new String[] {"x86_64-ps5"}, new String[] {"x86_64-ps5"}),
     XBoxOne(new String[] {"x86_64-xbone"}, new String[] {"x86_64-xbone"}),
-    OHOS(new String[] {"arm64-ohos"}, new String[] {"arm64-ohos"});
+    OHOS(new String[] {"arm64-ohos", "x86_64-ohos"}, new String[] {"arm64-ohos", "x86_64-ohos"});
 
     String[] architectures;
     String[] defaultArchitectures;

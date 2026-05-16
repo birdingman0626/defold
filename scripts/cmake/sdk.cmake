@@ -38,7 +38,7 @@ elseif (TARGET_PLATFORM MATCHES "arm64-win32|x86_64-win32|x86-win32")
     include(sdk_windows)
 elseif (TARGET_PLATFORM MATCHES "wasm-web|wasm_pthread-web")
     include(sdk_emscripten)
-elseif (TARGET_PLATFORM MATCHES "arm64-ohos")
+elseif (TARGET_PLATFORM MATCHES "(arm64|x86_64)-ohos")
     include(sdk_ohos)
 elseif (TARGET_PLATFORM MATCHES "arm64-nx64")
     # Nintendo Switch (NSDK) vendor toolchain

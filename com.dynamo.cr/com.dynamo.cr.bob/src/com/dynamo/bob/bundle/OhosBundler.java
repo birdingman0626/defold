@@ -43,7 +43,7 @@ import com.dynamo.bob.util.BobProjectProperties;
 // hap-sign-tool.jar, packaging) is intentionally not here — that has
 // to wait until the engine platform-layer port (FORK_NOTES.md §3)
 // produces a real libdmengine.so for arm64-ohos to package.
-@BundlerParams(platforms = {"arm64-ohos"})
+@BundlerParams(platforms = {"arm64-ohos", "x86_64-ohos"})
 public class OhosBundler implements IBundler {
 
     @Override

@@ -32,7 +32,7 @@ def build(bld):
                 target   = 'platform',
                 source   = sources)
 
-    elif bld.env.PLATFORM == 'arm64-ohos':
+    elif bld.env.PLATFORM in ('arm64-ohos', 'x86_64-ohos'):
         # OHOS-direct platform layer — bypasses GLFW. Implements
         # dmPlatform::* via XComponent + EGL directly, and provides
         # the dmPlatform::Ohos* surface that engine code expects on

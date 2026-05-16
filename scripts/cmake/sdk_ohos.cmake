@@ -20,9 +20,15 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
     set(CMAKE_TOOLCHAIN_FILE "${_OHOS_TOOLCHAIN_FILE}" CACHE FILEPATH "OHOS NDK toolchain file" FORCE)
 endif()
 
-# Tell the toolchain we target aarch64. OHOS_ARCH is consumed by
-# ohos.toolchain.cmake.
-set(OHOS_ARCH "arm64-v8a" CACHE STRING "OHOS ABI" FORCE)
+# Tell the toolchain which ABI to target. OHOS_ARCH is consumed by
+# ohos.toolchain.cmake; valid values are arm64-v8a / armeabi-v7a /
+# x86_64. Read TARGET_PLATFORM (set by Defold's CMake driver) to
+# decide; default to arm64-v8a so external invocations keep working.
+if(TARGET_PLATFORM MATCHES "x86_64-ohos")
+    set(OHOS_ARCH "x86_64" CACHE STRING "OHOS ABI" FORCE)
+else()
+    set(OHOS_ARCH "arm64-v8a" CACHE STRING "OHOS ABI" FORCE)
+endif()
 
 defold_log("OHOS_ARCH: ${OHOS_ARCH}")
 
