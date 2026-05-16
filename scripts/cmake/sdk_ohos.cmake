@@ -28,3 +28,10 @@ defold_log("OHOS_ARCH: ${OHOS_ARCH}")
 
 set(CMAKE_WARN_DEPRECATED OFF CACHE BOOL "" FORCE)
 include(${CMAKE_TOOLCHAIN_FILE})
+
+# Defold-side defines. The waf builds inject these via waf_dynamo.py's
+# OHOS branch; CMake-based libs (platform, etc.) need them set here.
+# Use direct CMAKE_<LANG>_FLAGS append so this works in CMake script
+# mode too (-P), where add_compile_definitions isn't available.
+set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -DDM_PLATFORM_OHOS=1 -D__MUSL__=1" CACHE STRING "" FORCE)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DDM_PLATFORM_OHOS=1 -D__MUSL__=1" CACHE STRING "" FORCE)

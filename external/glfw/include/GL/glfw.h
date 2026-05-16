@@ -168,9 +168,9 @@ extern "C" {
   #include <OpenGL/glu.h>
  #endif
 #endif
-#elif defined(ANDROID)
+#elif defined(ANDROID) || defined(DM_PLATFORM_OHOS)
 #include <EGL/egl.h>
-#include <GLES/gl.h>
+#include <GLES2/gl2.h>
 #else
  #include <GL/gl.h>
  #ifndef GLFW_NO_GLU

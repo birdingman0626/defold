@@ -42,7 +42,7 @@
     typedef void* HGLRC;
 #endif
 
-#if defined(__linux__) && !defined(ANDROID)
+#if defined(__linux__) && !defined(ANDROID) && !defined(DM_PLATFORM_OHOS)
     #include <GL/glx.h>
 #else
     typedef void* Window;

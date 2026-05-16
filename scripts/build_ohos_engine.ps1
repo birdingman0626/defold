@@ -48,7 +48,11 @@ if (-not (Test-Path $OhosNdk)) {
 $env:DEFOLD_HOME       = $DefoldRoot
 $env:DYNAMO_HOME       = $DynamoHome
 $env:PYTHONPATH        = "$DynamoHome\lib\python;$DefoldRoot\build_tools;$DynamoHome\ext\lib\python"
-$env:PYTHONIOENCODING  = 'UTF-8'
+$env:PYTHONIOENCODING  = 'utf-8'
+# Python 3.7+ -X utf8 mode bypasses the GBK codec the Chinese-locale
+# Windows runtime uses by default — which can't decode some bytes in
+# waf's output. Run Python with PYTHONUTF8=1 to fix.
+$env:PYTHONUTF8        = '1'
 $env:JAVA_HOME         = $JavaHome
 $env:OHOS_NDK_PATH     = $OhosNdk
 $env:OHOS_NDK_BIN_PATH = "$OhosNdk\llvm\bin"

@@ -31,6 +31,13 @@ else()
         elseif (TARGET_PLATFORM MATCHES "arm64-win32|x86_64-win32|x86-win32")
             list(APPEND _platform_glfw_sources "${PLAT_SRC_DIR}/platform_window_glfw3_win32.cpp")
         endif()
+    elseif (TARGET_PLATFORM MATCHES "arm64-ohos")
+        # OHOS-direct platform layer — bypasses GLFW entirely (engine
+        # doesn't actually need GLFW middleware on a HAP host). See
+        # FORK_NOTES.md §2.14.
+        set(_platform_glfw_sources
+            "${PLAT_SRC_DIR}/window.cpp"
+            "${PLAT_SRC_DIR}/platform_window_ohos.cpp")
     else()
         set(_platform_glfw_sources
             "${PLAT_SRC_DIR}/window.cpp"

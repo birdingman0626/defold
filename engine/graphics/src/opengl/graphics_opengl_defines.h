@@ -15,7 +15,15 @@
 #ifndef DMGRAPHICS_OPENGL_DEFINES_H
 #define DMGRAPHICS_OPENGL_DEFINES_H
 
-#if defined(__linux__) && !defined(ANDROID)
+#if defined(DM_PLATFORM_OHOS)
+
+// OHOS: GLES only, like Android.
+#define GL_GLEXT_PROTOTYPES
+#include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
+#define GL_BGRA GL_BGRA_EXT
+
+#elif defined(__linux__) && !defined(ANDROID)
 
 #if defined(DM_GRAPHICS_USE_OPENGLES)
 #define GL_GLEXT_PROTOTYPES

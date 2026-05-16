@@ -18,6 +18,8 @@
     #include <platform/platform_window_ios.h>
 #elif defined(ANDROID)
     #include <platform/platform_window_android.h>
+#elif defined(DM_PLATFORM_OHOS)
+    #include <platform/platform_window_ohos.h>
 #elif defined(__MACH__)
     #include <platform/platform_window_osx.h>
 #elif defined(_MSC_VER)

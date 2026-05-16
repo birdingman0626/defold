@@ -243,6 +243,10 @@ int dmStrCaseCmp(const char *s1, const char *s2)
         #elif defined(__EMSCRIPTEN__)
             // Emscripten wraps strerror_r as strerror anyway
             #define DM_STRERROR_USE_UNSAFE
+        #elif defined(DM_PLATFORM_OHOS) || defined(__MUSL__)
+            // musl libc (used on OpenHarmony) returns int from
+            // strerror_r — POSIX semantics, not GNU.
+            #define DM_STRERROR_USE_POSIX
         #else
             #if (_POSIX_C_SOURCE >= 200112L || _XOPEN_SOURCE >= 600) && ! _GNU_SOURCE || defined(_WIN32) || defined(__MACH__)
                 #define DM_STRERROR_USE_POSIX
