@@ -94,34 +94,58 @@ or platform-layer source code — that's stage 3 (still pending).
 ### 2.7 `engine/extension/src/dmsdk/extension/extension.h`
 - Added `DM_PLATFORM_OHOS` docstring placeholder. The actual
   `-DDM_PLATFORM_OHOS` injection in `build_tools/waf_dynamo.py`
-  lands together with the toolchain block (Task §3).
+  is in §2.8.
+
+### 2.8 `build_tools/sdk.py` + `build_tools/waf_dynamo.py`
+- `sdk.py`: three `arm64-ohos` branches added —
+  `_get_defold_sdk_folders`, `check_local_sdk`, `_get_defold_sdk_info`,
+  `_get_local_sdk_info`. All resolve OHOS toolchain from env vars
+  `OHOS_NDK_PATH` / `OHOS_NDK_BIN_PATH` / `OHOS_NDK_SYSROOT` (no
+  download support — set by caller). `check_local_sdk` raises a
+  clear `SDKException` if `OHOS_NDK_PATH` is missing.
+- `waf_dynamo.py`: `elif TargetOS.OHOS == target_os:` branch added.
+  Injects `-target aarch64-linux-ohos`, `--sysroot=$OHOS_NDK_SYSROOT`,
+  `-D__MUSL__`, `-DDM_PLATFORM_OHOS`, the Android-like flag set
+  (`-fpic -ffunction-sections -fno-rtti -static-libstdc++`), and
+  points `CC`/`CXX` at `$OHOS_NDK_BIN_PATH/clang*`. On Windows uses
+  `clang++.exe` directly to bypass the POSIX shell-wrapper shim.
+
+### 2.9 `com.dynamo.cr.bob/src/com/dynamo/bob/bundle/OhosBundler.java`
+- Minimum-viable `IBundler` for `arm64-ohos` (auto-registered via
+  `Project.doScan`'s classpath search). Copies the engine `.so`,
+  shared libs, archive, and bundle resources into a flat output
+  directory that the project's `ohos/` ArkTS shell consumes via
+  `hvigorw assembleHap`.
+- Does NOT yet produce a `.hap` directly — that requires templating
+  module.json5 + invoking `hvigorw` + signing with `hap-sign-tool.jar`,
+  which is deferred until an arm64-ohos engine `.so` actually exists
+  to package (§3 engine port).
 
 ---
 
-## 3. Pending — OHOS toolchain + engine port (NOT YET IN FORK)
+## 3. Pending — Engine platform-layer port (NOT YET IN FORK)
 
-Tracked but not committed:
+Multi-week work, OUT OF AUTOMATED SESSION SCOPE. After §2.8 is in place,
+`--platform=arm64-ohos` compiles dlib + similar leaf modules cleanly,
+then fails at engine/platform link time on missing symbols. Files to
+add (mirroring the android variants — see `engine/*/src/platform_*`
+naming convention):
 
-- **`build_tools/sdk.py`** — add `install_sdk` branch for `arm64-ohos`
-  that downloads or locates the OpenHarmony native SDK
-  (`OHOS_NDK_PATH`, `OHOS_NDK_BIN_PATH`, `OHOS_NDK_SYSROOT` env vars).
-- **`build_tools/waf_dynamo.py`** — add `elif TargetOS.OHOS == target_os:`
-  block injecting:
-  - `-DDM_PLATFORM_OHOS`
-  - `-target aarch64-linux-ohos`, `--sysroot=$OHOS_NDK_SYSROOT`,
-    `-D__MUSL__`
-  - clang++ from `$OHOS_NDK_BIN_PATH/clang++.exe`
-- **Engine platform layer** (multi-week, OUT OF AUTOMATED SESSION SCOPE):
-  - `engine/platform/src/platform_window_*.cpp` — XComponent surface
-    (instead of GLFW or Android NativeActivity)
-  - `engine/graphics/src/opengl/graphics_opengl.cpp` — EGL+GLESv2 init
-  - `engine/hid/src/...` — input from ArkUI bridge
-  - `engine/sound/src/...` — OpenSL ES is available, mirror Android
-  - `engine/sys/src/...` — file paths, system info via OHOS NAPI
-- **bob `.hap` bundle producer** (multi-day):
-  - new `com.dynamo.cr.bob/src/com/dynamo/bob/bundle/OhosBundler.java`
-    that templates ArkTS entry skeleton, copies engine `.so`, runs
-    `hvigorw assembleHap`, signs with `hap-sign-tool.jar`.
+  - **`engine/platform/src/platform_window_ohos.cpp`** — surface
+    backed by OHOS XComponent (instead of GLFW or Android
+    NativeActivity).
+  - **`engine/graphics/src/opengl/graphics_opengl_ohos.cpp`** — EGL +
+    GLESv2 init. ArkWeb already proved OHOS GLESv2 works; this just
+    wires it to a native EGL context.
+  - **`engine/hid/src/hid_ohos.cpp`** — touch + sensor input from
+    ArkUI's input bridge.
+  - **`engine/sound/src/sound_ohos.cpp`** — OpenSL ES is available;
+    can mostly copy the Android backend.
+  - **`engine/sys/src/sys_ohos.cpp`** — file paths, locale, system
+    info via OHOS NAPI.
+
+After the engine .so exists, extend `OhosBundler` (§2.9) to template
+ArkTS entry + run `hvigorw assembleHap` + sign.
 
 See also the extender fork's §8 (the `arm64-ohos:` recipe is already
 prototyped locally in `D:\DevTools\extender\sdk\.../defoldsdk/extender/build.yml`,
