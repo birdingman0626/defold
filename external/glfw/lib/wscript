@@ -17,6 +17,13 @@ def build(bld):
     elif re.match('arm.*?android', platform):
         sources  = bld.path.ant_glob(['*.c', 'android/*.c'])
         includes = '. android'
+    elif 'ohos' in platform:
+        # OHOS: placeholder only. The real XComponent+EGL+NAPI backend
+        # (analog of android/*.c) is the multi-day remaining piece —
+        # see FORK_NOTES.md §3. dmengine_headless target for OHOS does
+        # not link dmglfw at all (uses PLATFORM_NULL + GRAPHICS_NULL).
+        sources  = bld.path.ant_glob(['ohos/*.c'])
+        includes = '. ohos'
     elif platform in ['x86_64-linux', 'arm64-linux']:
         sources  = bld.path.ant_glob(['*.c', 'x11/*.c'])
         includes = '. x11'
