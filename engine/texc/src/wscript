@@ -8,6 +8,10 @@ def configure(conf):
         print("Skipping build of modelc for non host platform")
         return
 
+    if os.environ.get('SKIP_JNI_GEN'):
+        print("SKIP_JNI_GEN set; skipping gen_java.generate")
+        return
+
     dynamo_home = conf.env.DYNAMO_HOME
     includes = [os.getcwd(),
                 os.path.join(dynamo_home, 'sdk', 'include')]
@@ -27,6 +31,11 @@ def configure(conf):
 
 
 def build(bld):
+    if os.environ.get('SKIP_JNI_GEN'):
+        # texc is editor-only; skip the entire library when we're
+        # cross-compiling for arm64-ohos (engine doesn't link it).
+        return
+
     texc_sources = bld.path.ant_glob("*.cpp")
     texc_sources_no_jni = []
 

@@ -53,8 +53,12 @@ $env:JAVA_HOME         = $JavaHome
 $env:OHOS_NDK_PATH     = $OhosNdk
 $env:OHOS_NDK_BIN_PATH = "$OhosNdk\llvm\bin"
 $env:OHOS_NDK_SYSROOT  = "$OhosNdk\sysroot"
-$env:PATH = "$DynamoHome\ext\bin\x86_64-win32;$JavaHome\bin;$env:PATH"
+$env:PATH = "$DynamoHome\ext\bin\x86_64-win32;$JavaHome\bin;$env:OHOS_NDK_BIN_PATH;$env:PATH"
+# JNI gen step is Android-specific and breaks when the available
+# clang isn't binary-compatible with the host's MSVC headers. Skip
+# it — arm64-ohos doesn't need any JNI bridge anyway.
+$env:SKIP_JNI_GEN = '1'
 
 Set-Location $DefoldRoot
 
-python scripts/build.py --platform=arm64-ohos --skip-tests --skip-builtins --skip-docs --skip-bob-light $Step
+python scripts/build.py --platform=arm64-ohos --skip-tests --skip-builtins --skip-docs --skip-bob-light $Step -- --skip-build-tests

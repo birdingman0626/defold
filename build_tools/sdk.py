@@ -443,6 +443,17 @@ def _get_common_visual_studio_roots():
                 if os.path.exists(installation_root):
                     roots.append(os.path.normpath(installation_root))
 
+        # VS Insiders (pre-release / next-major) — used a different
+        # path scheme: "<base>/Microsoft Visual Studio/<N>/Insiders"
+        # where <N> is the major version (18 for VS 2026 Insiders).
+        # vswhere doesn't always enumerate Insiders builds; scan
+        # commonly-seen major versions and accept the dir if it has
+        # the expected VC/Tools/MSVC subtree.
+        for major in ('18', '19', '20'):
+            installation_root = os.path.join(base, 'Microsoft Visual Studio', major, 'Insiders')
+            if os.path.isdir(os.path.join(installation_root, 'VC', 'Tools', 'MSVC')):
+                roots.append(os.path.normpath(installation_root))
+
     deduped = []
     for root in roots:
         if root not in deduped:

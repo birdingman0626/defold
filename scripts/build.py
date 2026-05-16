@@ -1862,7 +1862,16 @@ class Configuration(object):
 
         # Make sure we build these for the host platform for the toolchain (bob light)
         host_lib_skip_tests = host != self.target_platform
+        # When SKIP_JNI_GEN is set, the editor-side host libraries
+        # (jni / texc / modelc / shaderc) aren't needed and would
+        # fail anyway. Useful for arm64-ohos cross builds where the
+        # editor pipeline isn't exercised.
+        skip_jni = bool(os.environ.get('SKIP_JNI_GEN'))
+        editor_only_libs = {'jni', 'texc', 'modelc', 'shaderc'}
         for lib in HOST_LIBS:
+            if skip_jni and lib in editor_only_libs:
+                self._log('SKIP_JNI_GEN set — skipping host build of %s' % lib)
+                continue
             self._build_engine_lib(args, lib, host, skip_tests = host_lib_skip_tests)
         if not self.skip_bob_light:
             # We must build bob-light, which builds content during the engine build
