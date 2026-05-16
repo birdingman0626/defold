@@ -136,15 +136,59 @@ or platform-layer source code — that's stage 3 (still pending).
   fail there with "library not found: libengine.a" until §3 produces
   them. That's the next break-point.
 
+### 2.11 wscript dispatch wiring for arm64-ohos
+
+Routes the existing `posix` / `linux` / `Android-equivalent` source
+files for OHOS so `--platform=arm64-ohos build_engine` advances
+past the per-subsystem dispatch and only fails when it hits the
+missing platform-specific code in §3.
+
+- `build_tools/cross.py` — add `'ohos'` to the fallback-tag list
+  that maps to `posix`. Unblocks dlib's socket / sys / mutex /
+  thread / time / condition_variable / file_descriptor.
+- `engine/dlib/src/wscript` — add `'ohos': ['mbedtls']` to the
+  sslsocket extra_tags dict (HTTPS works via the same mbedtls
+  build that Android/Linux use).
+- `engine/extension/src/wscript` — comment-only; no
+  `extension_ohos.cpp` yet (no lifecycle-hook surface yet).
+- `engine/sound/src/wscript` — route OHOS to
+  `devices/device_opensl.cpp`. OpenSL ES exists on OHOS.
+- `engine/sound/src/devices/device_opensl.cpp` — wrap
+  `GetSampleRate()` JNI body in `#if !defined(DM_PLATFORM_OHOS)`
+  with a hardcoded `44100` fallback for OHOS (OpenSL resamples
+  internally if device rate differs).
+- `engine/crash/src/wscript` — OHOS reuses libunwind +
+  `load_addrs_proc_smap.cpp` + `file_posix.cpp` (matches Android).
+- `engine/profiler/src/wscript` — OHOS reuses `profiler_linux.cpp`
+  + `profiler_proc_utils.cpp` (musl exposes /proc the same way).
+- `engine/engine/src/wscript` — OHOS added to UNWIND/CPP_RUNTIME
+  list and to no-OPENAL list (it uses OpenSL ES via §2.11
+  device_opensl).
+- `build_tools/waf_dynamo.py apply_apk_test` — also convert
+  `cprogram` → `cshlib` on OHOS so the engine ships as
+  `libdmengine.so` for ArkTS to load via XComponent.
+
+After this section, every Defold engine subsystem that has a
+purely-POSIX or Linux-compatible variant is selected for OHOS. The
+remaining gap is the truly platform-different code in §3.
+
 ---
 
-## 3. Pending — Engine platform-layer port (NOT YET IN FORK)
+## 3. Pending — Engine platform-layer port (PARTIAL / IN PROGRESS)
 
-Multi-week work, OUT OF AUTOMATED SESSION SCOPE. After §2.8 is in place,
-`--platform=arm64-ohos` compiles dlib + similar leaf modules cleanly,
-then fails at engine/platform link time on missing symbols. Files to
-add (mirroring the android variants — see `engine/*/src/platform_*`
-naming convention):
+The work in §2 routes everything that *can* fall back to posix/linux.
+What's left is the genuinely platform-different code: ArkTS host shell,
+XComponent surface acquisition, EGL+GLESv2 context tied to the
+XComponent's `OHNativeWindow`, NAPI bindings for OS lookups, and the
+GLFW backend (`external/glfw/lib/ohos/`) that mirrors the ~4,450-line
+android one.
+
+Estimated remaining work: 40+ engineering hours, much of which is
+emulator-iteration cycles (build → hdc install → hilog → fix → repeat,
+typically 10-30 cycles to converge).
+
+Files still to add (mirroring the android variants — see
+`engine/*/src/platform_*` naming convention):
 
   - **`engine/platform/src/platform_window_ohos.cpp`** — surface
     backed by OHOS XComponent (instead of GLFW or Android
