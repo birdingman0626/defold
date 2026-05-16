@@ -633,6 +633,42 @@ def default_flags(self):
                 '-static-libstdc++',
                 '-Wl,--gc-sections',
                 '-Wl,--build-id=uuid'] + getAndroidLinkFlags(target_arch))
+    elif TargetOS.OHOS == target_os:
+        # OpenHarmony / HarmonyOS Next native toolchain.
+        # Targets aarch64-unknown-linux-ohos with musl libc; clang lives
+        # inside the OHOS Native SDK distributed by OpenHarmony.
+        sysroot  = self.sdkinfo['sysroot']
+        bintools = self.sdkinfo['bintools']
+
+        for f in ['CFLAGS', 'CXXFLAGS']:
+            self.env.append_value(f, [
+                '-g', '-D__STDC_LIMIT_MACROS', '-DDDF_EXPOSE_DESCRIPTORS',
+                '-Wall', '-fpic', '-ffunction-sections', '-fdata-sections',
+                '-fstack-protector', '-fomit-frame-pointer',
+                '-fno-strict-aliasing', '-fno-exceptions', '-funwind-tables',
+                '-target', 'aarch64-linux-ohos',
+                '--sysroot=%s' % sysroot,
+                '-D__MUSL__', '-DDM_PLATFORM_OHOS'])
+            if f == 'CXXFLAGS':
+                self.env.append_value(f, ['-fno-rtti'])
+
+        self.env.append_value('DEFINES', ['DM_NO_SYSTEM_FUNCTION'])
+
+        self.env.append_value('LINKFLAGS', [
+            '-target', 'aarch64-linux-ohos',
+            '--sysroot=%s' % sysroot,
+            '-static-libstdc++',
+            '-Wl,--gc-sections',
+            '-Wl,--build-id=uuid'])
+
+        # Point waf at the OHOS clang explicitly. On Windows the
+        # extender uses clang++.exe directly because the POSIX shell
+        # wrapper aarch64-unknown-linux-ohos-clang++ isn't executable.
+        clang_exe = 'clang++.exe' if sys.platform == 'win32' else 'clang++'
+        self.env['CXX']  = os.path.join(bintools, clang_exe)
+        self.env['LINK_CXX'] = self.env['CXX']
+        self.env['CC']   = self.env['CXX'].replace('++', '')
+        self.env['LINK_CC'] = self.env['CC']
     elif TargetOS.WEB == target_os:
 
         emflags_compile = ['DISABLE_EXCEPTION_CATCHING=1']

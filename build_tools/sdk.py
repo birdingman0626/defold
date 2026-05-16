@@ -907,6 +907,11 @@ def check_defold_sdk(sdkfolder, host_platform, platform, verbose=False):
         folders.append(get_android_sdk_path(sdkfolder))
         folders.append(get_android_ndk_path(sdkfolder))
 
+    elif platform == 'arm64-ohos':
+        ndk_path = os.environ.get('OHOS_NDK_PATH')
+        if ndk_path:
+            folders.append(ndk_path)
+
     elif platform in ('x86_64-linux','arm64-linux'):
         folders.append(os.path.join(sdkfolder, host_platform))
 
@@ -953,6 +958,15 @@ def check_local_sdk(platform, verbose=False):
         ndkpath = get_android_local_ndk_path(platform, verbose)
         return path is not None and ndkpath is not None
 
+    elif platform == 'arm64-ohos':
+        ndk_path = os.environ.get('OHOS_NDK_PATH')
+        if not ndk_path or not os.path.exists(ndk_path):
+            raise SDKException(
+                "OHOS_NDK_PATH is not set or does not exist. "
+                "Set it to the OpenHarmony native SDK root "
+                "(directory containing llvm/ and sysroot/).")
+        return True
+
     return True
 
 
@@ -992,6 +1006,17 @@ def _get_defold_sdk_info(sdkfolder, host_platform, platform):
         info['bintools']    = get_android_bintools_path(info['ndk'], platform)
         info['api']         = get_android_api_version(platform)
         info['clangname']   = get_android_clang_name(platform, info['api'])
+
+    elif platform == 'arm64-ohos':
+        # OHOS native SDK isn't packaged into ~/.dcache like the
+        # Android NDK; we resolve directly from env vars set by
+        # the caller (extender launcher or CI workflow).
+        ndk_path = os.environ['OHOS_NDK_PATH']
+        info['ndk']      = ndk_path
+        info['bintools'] = os.environ.get('OHOS_NDK_BIN_PATH',
+                                          os.path.join(ndk_path, 'llvm', 'bin'))
+        info['sysroot']  = os.environ.get('OHOS_NDK_SYSROOT',
+                                          os.path.join(ndk_path, 'sysroot'))
 
     elif platform in ('wasm-web', 'wasm_pthread-web'):
         info['emsdk'] = {}
@@ -1042,6 +1067,14 @@ def _get_local_sdk_info(platform, verbose=False):
         info['bintools']    = get_android_bintools_path(info['ndk'], platform)
         info['api']         = get_android_api_version(platform)
         info['clangname']   = get_android_clang_name(platform, info['api'])
+
+    elif platform == 'arm64-ohos':
+        ndk_path = os.environ['OHOS_NDK_PATH']
+        info['ndk']      = ndk_path
+        info['bintools'] = os.environ.get('OHOS_NDK_BIN_PATH',
+                                          os.path.join(ndk_path, 'llvm', 'bin'))
+        info['sysroot']  = os.environ.get('OHOS_NDK_SYSROOT',
+                                          os.path.join(ndk_path, 'sysroot'))
 
     elif platform in ('wasm-web', 'wasm_pthread-web'):
         info['emsdk'] = {}
