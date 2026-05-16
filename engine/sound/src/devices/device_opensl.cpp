@@ -191,6 +191,14 @@ namespace dmDeviceOpenSL
 
     static int GetSampleRate()
     {
+#if defined(DM_PLATFORM_OHOS)
+        // OHOS doesn't expose the host AudioManager via NAPI from
+        // native code as cleanly as Android does via JNI. Hardcode
+        // 44100 — OpenSL ES on OHOS resamples internally if the
+        // underlying mixer is at a different rate. Loses a few ms
+        // of latency vs. matching native rate but doesn't break.
+        return 44100;
+#else
         dmAndroid::ThreadAttacher thread;
         JNIEnv* env = thread.GetEnv();
         if (env == 0)
@@ -207,6 +215,7 @@ namespace dmDeviceOpenSL
         env->DeleteLocalRef(sound_class);
 
         return (int)sample_rate;
+#endif
     }
 
     dmSound::Result DeviceOpenSLOpen(const dmSound::OpenDeviceParams* params, dmSound::HDevice* device)

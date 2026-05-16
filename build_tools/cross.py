@@ -96,7 +96,7 @@ def get_platform_file_fallback_tags(platform):
         if tag and tag not in tags:
             tags.append(tag)
 
-    if target in ('android', 'ios', 'linux', 'macos', 'web'):
+    if target in ('android', 'ios', 'linux', 'macos', 'web', 'ohos'):
         append_tag('posix')
 
     return tags

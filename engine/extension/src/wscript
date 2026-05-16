@@ -13,6 +13,9 @@ def build(bld):
         source += ['extension_ios.cpp']
     if re.match('arm.*?android', bld.env.PLATFORM):
         source += ['extension_android.cpp']
+    # OHOS: no extension_ohos.cpp yet — OHOS extensions don't have
+    # lifecycle callbacks to register (no JNI/NAPI hook surface
+    # mirroring Android's OnActivityResult).
 
     extension = bld.stlib(features     = 'cxx',
                           includes     = '.',

@@ -36,6 +36,10 @@ def build(bld):
 
     if 'android' in bld.env.PLATFORM:
         source += ['devices/device_opensl.cpp']
+    elif 'ohos' in bld.env.PLATFORM:
+        # OHOS ships OpenSL ES too; device_opensl.cpp #ifdefs the
+        # JNI-specific GetSampleRate to fall back to 44100 on OHOS.
+        source += ['devices/device_opensl.cpp']
     elif 'web' in bld.env.PLATFORM:
         source += ['devices/device_js.cpp']
     elif 'nx64' in bld.env.PLATFORM:
