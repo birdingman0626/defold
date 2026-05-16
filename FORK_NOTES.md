@@ -172,6 +172,27 @@ After this section, every Defold engine subsystem that has a
 purely-POSIX or Linux-compatible variant is selected for OHOS. The
 remaining gap is the truly platform-different code in §3.
 
+### 2.12 platform_window_glfw_ohos.cpp + header placeholder
+- `engine/platform/src/platform_window_ohos.h` — declares
+  `dmPlatform::OhosVerifySurface/OhosBeginFrame/GetOhosEGLContext/
+  GetOhosEGLSurface/GetSafeAreaOhos`. Mirrors the Android header but
+  omits the JNI/ANativeWindow-specific functions; OHOS will need
+  NAPI + OHNativeWindow getters when those are implemented.
+- `engine/platform/src/platform_window_glfw_ohos.cpp` — every
+  function returns `NULL` / `0` / `false`. Lets the `platform`
+  static library link cleanly for arm64-ohos; engine produces no
+  output at runtime because there's no surface to draw to. Real
+  XComponent-backed implementation is the multi-day piece in §3.
+- `engine/platform/src/wscript` routes arm64-ohos to the new .cpp
+  and installs the new header.
+
+### 2.13 external/glfw/lib/ohos/ohos_stub.c
+- Single C placeholder symbol so `bld.stlib(target='dmglfw' ...)`
+  builds a non-empty static archive for arm64-ohos. `dmengine_headless`
+  doesn't link dmglfw at all (uses PLATFORM_NULL + GRAPHICS_NULL);
+  full `dmengine` will link it and fail with missing GLFW symbols
+  until §3 lands the real backend.
+
 ---
 
 ## 3. Pending — Engine platform-layer port (PARTIAL / IN PROGRESS)
@@ -210,3 +231,105 @@ The extender-side recipe lives in §2.10 above. Any defoldsdk built
 from this fork after commit `120c575` ships the OHOS recipe
 automatically — no need to keep the local extender SDK cache in sync
 by hand.
+
+---
+
+## 4. Engineering handoff — step-by-step path to "runs on emulator"
+
+The work in §1–§2 leaves the build system fully OHOS-aware and the
+engine .so should now link as `libdmengine.so` for arm64-ohos (with
+all-NULL platform/graphics). The path from there to actually rendering
+the VN sample on the emulator is roughly:
+
+### Step 1 — Validate the empty .so builds (½ day)
+
+Set OHOS_NDK_PATH + OHOS_NDK_BIN_PATH + OHOS_NDK_SYSROOT, then
+`./scripts/build.py --platform=arm64-ohos shell` and inside that
+shell `python scripts/build.py --platform=arm64-ohos install_ext
+install_sdk build_engine`. Iterate on whatever compile/link errors
+surface (will be many — unfixed symbols inside files that compile but
+weren't speculative-tested). When `dmengine_headless` for arm64-ohos
+links to a .so, that's milestone 1.
+
+### Step 2 — Port the GLFW backend (~3-5 days)
+
+Mirror `external/glfw/lib/android/` into `external/glfw/lib/ohos/`.
+The mapping is well-defined:
+
+| Android concept                | OHOS equivalent                                |
+|--------------------------------|------------------------------------------------|
+| `ANativeWindow*`               | `OHNativeWindow*` (from `<native_window/external_window.h>`) |
+| `android_app*` / `native_app_glue` | OH_NativeXComponent_Callback (from `<ace/xcomponent/native_interface_xcomponent.h>`) |
+| JNI `JNIEnv` / `jobject`       | NAPI `napi_env` / `napi_value`                  |
+| `ALooper`                      | OHOS event loop (uv_async via NAPI bridge)     |
+| `AInputEvent`                  | XComponent touch callbacks (OnTouchEvent_CB)   |
+| `ANativeActivity_onCreate()`   | XComponent register-callback NAPI export       |
+
+Files to write (count + Android-equivalent LOC for sizing):
+- `ohos_init.c` (~1300 LOC) — EGL+GLES context init, XComponent surface
+- `ohos_window.c` (~900 LOC) — surface lifecycle (create/resize/destroy)
+- `ohos_native_app_glue.c` (~450 LOC) — XComponent lifecycle ↔ engine main loop bridge
+- `ohos_jni.c` → `ohos_napi.c` (~300 LOC) — NAPI bindings for OS lookups
+- `ohos_joystick.c`, `ohos_thread.c`, `ohos_time.c`, `ohos_util.{c,h}`, `ohos_enable.c`, `ohos_glext.c` — typically each <200 LOC, mostly direct ports
+- `platform.h` — OHOS-specific platform struct (mirrors `android/platform.h`)
+
+### Step 3 — ArkTS host shell (1 day)
+
+In `defold_vn/ohos/entry/src/main/ets/`:
+- Replace the existing WebView wrapper with an XComponent.
+- ArkTS side registers `OH_NativeXComponent_RegisterCallback` for
+  surface lifecycle + touch events.
+- Native side (a new tiny `napi_init.cpp` in the engine) receives
+  those callbacks, packages them into events the GLFW backend's
+  event loop consumes.
+- ArkTS calls `engineMain(width, height)` from `OnSurfaceCreated_CB`.
+
+### Step 4 — Wire `OhosBundler.java` to produce a real `.hap` (½ day)
+
+`OhosBundler.java` (§2.9) currently copies the engine .so to a flat
+output dir. Extend it to:
+- Template `ohos/entry/src/main/module.json5` with the project's
+  bundleName + abilityName.
+- Run `hvigorw assembleHap` from the templated project.
+- Sign with `hap-sign-tool.jar` using project-provided keystore.
+
+### Step 5 — Iterate on the emulator (multi-day)
+
+Build → `hdc install` → `aa start` → `hdc shell hilog` → fix → repeat.
+Common first-cycle failures (in expected order):
+1. `libdmengine.so` fails to load — missing NAPI export or undefined
+   symbol. Fix in `napi_init.cpp` / GLFW backend.
+2. Engine launches but XComponent surface acquisition times out.
+   Fix lifecycle ordering in ArkTS shell.
+3. EGL context creates but `eglMakeCurrent` fails. Usually the
+   EGLConfig isn't matching the XComponent's surface format.
+4. Rendering proceeds but produces a black frame. GLES extension
+   detection (same family of issue as the WebView wrapper had —
+   compressed textures, GLSL version).
+5. Rendering works but touch input doesn't route. Fix
+   `OH_NativeXComponent_RegisterCallback` wiring.
+
+A real engineer with an OHOS device should expect ~10-30 iteration
+cycles to converge. The emulator's software GLES will be more painful
+than a real device — the prior WebView attempt black-screened on
+emulator GLES specifically (see `.agentdocs/build/ohos_webview.md`
+in `defold_vn`). A real device is the better target.
+
+### Step 6 — Run the VN sample
+
+`scripts/build_ohos.ps1` already drives the flow for the WebView
+wrapper. After Step 4, swap it to:
+- `bob.jar --platform=arm64-ohos --architectures=arm64-ohos bundle`
+  (uses §2.9 `OhosBundler`).
+- Optionally `hdc install` the result.
+
+If §2.9 bundles correctly and §1-3 produce a working engine .so, this
+script should produce a `.hap` that boots into the VN title screen on
+the emulator.
+
+### Total realistic effort
+
+~6-10 engineering days for a developer who hasn't done OHOS native
+work before; ~3-4 days for someone with prior OH_NativeXComponent
+experience. Most of the variance comes from emulator GLES bugs vs.
+real-device validation.
