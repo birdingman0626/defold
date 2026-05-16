@@ -672,6 +672,17 @@ def default_flags(self):
         self.env['LINK_CXX'] = self.env['CXX']
         self.env['CC']   = self.env['CXX'].replace('++', '')
         self.env['LINK_CC'] = self.env['CC']
+
+        # Scrub MinGW-isms that waflib's gcc_modifier_win32 baked in
+        # when the host is Windows. ld.lld targeting OHOS rejects
+        # --enable-auto-import, and the .exe/.dll patterns are wrong
+        # for an ELF cross-target.
+        bad_flags = ('-Wl,--enable-auto-import',)
+        self.env['LINKFLAGS'] = [f for f in self.env['LINKFLAGS'] if f not in bad_flags]
+        self.env['cprogram_PATTERN'] = '%s'
+        self.env['cshlib_PATTERN']   = 'lib%s.so'
+        self.env['cxxprogram_PATTERN'] = '%s'
+        self.env['cxxshlib_PATTERN']   = 'lib%s.so'
     elif TargetOS.WEB == target_os:
 
         emflags_compile = ['DISABLE_EXCEPTION_CATCHING=1']

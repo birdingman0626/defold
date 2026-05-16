@@ -380,14 +380,11 @@ PACKAGES_EMSCRIPTEN=[
 PACKAGES_NODE_MODULES=["xhr2-0.1.0"]
 
 PACKAGES_OHOS_64 = [
-    # No prebuilt 3rd-party libs for arm64-ohos yet — we'd need to
-    # cross-compile each of luajit/tremolo/bullet/glfw/box2d/opus/
-    # harfbuzz/SheenBidi/libunibreak/SkriBidi against the OHOS NDK
-    # and package them as packages/<name>-arm64-ohos.tar.gz. Until
-    # that happens, install_ext for arm64-ohos succeeds at the
-    # common+host level (which gives us protoc) but the engine will
-    # fail to link without the third-party static libs.
-    # See FORK_NOTES.md §3 / §4.
+    # arm64-ohos prebuilts — cross-compiled in-tree against the OHOS
+    # NDK. See FORK_NOTES.md §2.20 / §3 / §4 for the build recipes.
+    # 'glfw-2.7.1' here is an empty libdmglfw.a stub because OHOS
+    # bypasses GLFW entirely (uses platform_window_ohos.cpp directly).
+    "glfw-2.7.1",
 ]
 
 PLATFORM_PACKAGES = {

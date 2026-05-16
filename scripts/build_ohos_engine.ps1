@@ -23,13 +23,21 @@
 param(
     [string]$JavaHome  = 'D:\DevTools\graalvm-jdk-25.0.3+9.1',
     [string]$OhosNdk   = 'D:\DevTools\command-line-tools\sdk\default\openharmony\native',
-    [string]$DefoldRoot = $PSScriptRoot.Substring(0, $PSScriptRoot.Length - 8), # strip "\scripts"
+    [string]$DefoldRoot,
     [string]$DynamoHome,
     [ValidateSet('install_ext', 'check_sdk', 'build_engine')]
     [string]$Step = 'build_engine'
 )
 
 $ErrorActionPreference = 'Stop'
+
+if (-not $DefoldRoot) {
+    $scriptPath = $MyInvocation.MyCommand.Path
+    if (-not $scriptPath) { $scriptPath = $PSCommandPath }
+    if (-not $scriptPath) { $scriptPath = (Resolve-Path 'scripts/build_ohos_engine.ps1' -ErrorAction SilentlyContinue) }
+    if (-not $scriptPath) { throw "Cannot determine script path; pass -DefoldRoot explicitly." }
+    $DefoldRoot = Split-Path -Parent (Split-Path -Parent $scriptPath)
+}
 
 if (-not $DynamoHome) {
     $DynamoHome = Join-Path $DefoldRoot 'tmp\dynamo_home'
