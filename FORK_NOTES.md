@@ -121,6 +121,21 @@ or platform-layer source code — that's stage 3 (still pending).
   which is deferred until an arm64-ohos engine `.so` actually exists
   to package (§3 engine port).
 
+### 2.10 `share/extender/build_input.yml`
+- Added `ohos:` base block (env, engineLibs, dynamicLibs, file
+  patterns, allowedFlags, libCmd) and `arm64-ohos:` arch-specific
+  block (NDK_CXX, defines, compileCmd, linkCmd). Mirrors arm64-android
+  structure.
+- Build output ships in every defoldsdk tarball as
+  `defoldsdk/extender/build.yml`; the extender server picks it up
+  automatically. This replaces the previously-uncommitted local
+  prototype that lived in `D:\DevTools\extender\sdk\.../defoldsdk/
+  extender/build.yml`.
+- engineLibs list references `.a` files under
+  `{{dynamo_home}}/lib/arm64-ohos` that don't yet exist; link will
+  fail there with "library not found: libengine.a" until §3 produces
+  them. That's the next break-point.
+
 ---
 
 ## 3. Pending — Engine platform-layer port (NOT YET IN FORK)
@@ -147,6 +162,7 @@ naming convention):
 After the engine .so exists, extend `OhosBundler` (§2.9) to template
 ArkTS entry + run `hvigorw assembleHap` + sign.
 
-See also the extender fork's §8 (the `arm64-ohos:` recipe is already
-prototyped locally in `D:\DevTools\extender\sdk\.../defoldsdk/extender/build.yml`,
-not yet committed).
+The extender-side recipe lives in §2.10 above. Any defoldsdk built
+from this fork after commit `120c575` ships the OHOS recipe
+automatically — no need to keep the local extender SDK cache in sync
+by hand.
