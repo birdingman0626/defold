@@ -545,6 +545,15 @@ void ExtensionUnregisteriOSUIApplicationDelegate(void* delegate);
  *
  */
 
+/*# Set if the platform is OpenHarmony / HarmonyOS Next
+ *
+ * Set if the platform is OpenHarmony / HarmonyOS Next
+ *
+ * @macro
+ * @name DM_PLATFORM_OHOS
+ *
+ */
+
 #if defined(__cplusplus)
 } // extern "C"
 
