@@ -193,6 +193,54 @@ remaining gap is the truly platform-different code in §3.
   full `dmengine` will link it and fail with missing GLFW symbols
   until §3 lands the real backend.
 
+### 2.14 OHOS-direct dmPlatform implementation (~400 LOC)
+- `engine/platform/src/platform_window_ohos.cpp` — full
+  `dmPlatform::*` implementation that bypasses GLFW. Singleton
+  Window struct, real EGL setup (`eglGetDisplay` → `eglInitialize` →
+  `eglChooseConfig` → `eglCreateContext`, surface bound from
+  XComponent's OHNativeWindow), trivial stubs for keyboard/mouse/
+  joystick, touch buffer drained per-frame via `GetTouchData`.
+- `engine/platform/src/wscript` arm64-ohos branch now builds the
+  `platform` lib from `window.cpp + platform_window_ohos.cpp` only —
+  skips `platform_window_glfw.cpp` entirely.
+- The old `platform_window_glfw_ohos.cpp` stub is deleted.
+
+### 2.15 NAPI module entry — XComponent lifecycle bridge
+- `engine/engine/src/ohos/napi_init.cpp` — exports
+  `attachXComponent / engineStart / engineStop` to ArkTS, registers
+  `OH_NativeXComponent_RegisterCallback` handlers that forward into
+  `OhosPlatform_*` C hooks (defined in platform_window_ohos.cpp).
+  Spawns `engine_main()` on a pthread when ArkTS calls
+  `engineStart()`.
+- `engine/engine/src/wscript` includes ohos/napi_init.cpp in the
+  `engine` static lib on arm64-ohos.
+- `build_tools/waf_dynamo.py` + `share/extender/build_input.yml`
+  add `ace_napi.z`, `ace_ndk.z`, `hilog_ndk.z`, `native_window` to
+  the OHOS link line.
+
+### 2.16 ArkTS host shell switched to XComponent
+*Lives in `defold_vn`, not in this fork. Committed at
+`b99ab79` (defold_vn main branch).*
+- `ohos/entry/src/main/ets/pages/Index.ets` — now creates an
+  `XComponent` with id "defold" and calls
+  `dmengine.attachXComponent(context)` + `engineStart()` on load.
+  The previous WebView wrapper is preserved at
+  `Index.webview.ets.bak`.
+- `EntryAbility.ets` drops the `customizeSchemes(dvn://)` block
+  (no Web component → no CORS workaround needed).
+- `scripts/build_ohos.ps1` switched to the native pipeline:
+  bob.jar arm64-ohos bundle → copy `.so` to libs/arm64-v8a → hvigor →
+  sign.
+
+### 2.17 Diagnostic milestone
+On the local Windows host with the OHOS NDK at
+`D:\DevTools\command-line-tools\sdk\default\openharmony\native`,
+`python scripts/build.py --platform=arm64-ohos check_sdk` now
+advances past SDK lookup successfully (only failing on missing
+`protoc`, which install_ext would provide). Confirms the
+toolchain wiring + sdk.py + build_constants routing all work
+end-to-end for the OHOS path.
+
 ---
 
 ## 3. Pending — Engine platform-layer port (PARTIAL / IN PROGRESS)
