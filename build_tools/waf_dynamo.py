@@ -2171,6 +2171,10 @@ def detect(conf):
         conf.env['FRAMEWORK_OPENGL'] = ['OpenGL']
     elif TargetOS.ANDROID == target_os:
         conf.env['LIB_OPENGL'] = ['EGL', 'GLESv1_CM', 'GLESv2']
+    elif TargetOS.OHOS == target_os:
+        # OHOS ships EGL + GLESv2 (no GLESv1_CM). Also link the NAPI
+        # + XComponent + hilog + native-window libs the engine needs.
+        conf.env['LIB_OPENGL'] = ['EGL', 'GLESv2', 'ace_napi.z', 'ace_ndk.z', 'hilog_ndk.z', 'native_window']
     elif TargetOS.WINDOWS == target_os:
         conf.env['LINKFLAGS_OPENGL'] = ['opengl32.lib', 'glu32.lib']
     elif 'linux' == target_os:
@@ -2184,6 +2188,9 @@ def detect(conf):
         conf.env['FRAMEWORK_OPENAL'] = ['OpenAL', 'AudioToolbox']
         conf.env['FRAMEWORK_SOUND'] = ['AVFoundation']
     elif TargetOS.ANDROID == target_os:
+        conf.env['LIB_OPENAL'] = ['OpenSLES']
+    elif TargetOS.OHOS == target_os:
+        # OHOS uses OpenSL ES via the same -lOpenSLES name as Android.
         conf.env['LIB_OPENAL'] = ['OpenSLES']
     elif TargetOS.LINUX == target_os:
         conf.env['LIB_OPENAL'] = ['openal']

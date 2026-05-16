@@ -509,10 +509,14 @@ platforms:
         flags:      ["-fno-exceptions", "-fvisibility=hidden"]
         linkFlags:  ["-Wl,--build-id=uuid"]
         libs:       []
-        # OHOS system libs ship under /system/lib64/ with names that
-        # match Android's. EGL+GLESv2 give the WebGL-equivalent
-        # context; OpenSLES is available for audio.
-        dynamicLibs: ["EGL","GLESv2","OpenSLES","m","c"]
+        # OHOS system libs ship under /system/lib64/.
+        # ace_napi: NAPI module registration
+        # ace_ndk:  XComponent (OH_NativeXComponent_*) entry points
+        # hilog_ndk: hilog logging from native code
+        # EGL+GLESv2: graphics
+        # OpenSLES: audio
+        # native_window: OHNativeWindow handle ops
+        dynamicLibs: ["EGL","GLESv2","OpenSLES","ace_napi.z","ace_ndk.z","hilog_ndk.z","native_window","m","c"]
         symbols:    ["GraphicsAdapterOpenGL"]
 
     exePrefix: 'lib'
