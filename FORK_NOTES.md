@@ -241,6 +241,55 @@ advances past SDK lookup successfully (only failing on missing
 toolchain wiring + sdk.py + build_constants routing all work
 end-to-end for the OHOS path.
 
+### 2.18 Local Windows host bootstrap fully working
+After:
+- `install_ext` (with `PACKAGES_OHOS_64 = []` placeholder)
+- `check_sdk` (sdk_ohos.cmake locates the NDK toolchain file)
+- scoop-installed LLVM 22.1.5 (`clang++.exe` for host gen_java; OHOS
+  NDK's clang 15.0.4 is too old to parse VS Insiders 18 MSVC
+  14.51 headers)
+- Git's `sh.exe` on PATH (bob-light's `scripts/copy.sh`)
+- VS 2026 Insiders MSVC detection (sdk.py `_get_common_visual_studio_roots`
+  now scans `<base>/Microsoft Visual Studio/<N>/Insiders/`)
+
+`scripts/build_ohos_engine.ps1` now drives the build through:
+  ✓ host bootstrap (testmain, dlib, texc, modelc, shaderc, bob-light)
+  ✓ arm64-ohos cross-compile of every engine library
+  ✓ bob-light compiling bundled materials (gui.fp/.vp → .spc)
+  ✓ reaches `dmengine` LINK step
+
+### 2.19 ShaderCompilers.java — Arm64Ohos in shader-language dispatch
+- `getPlatformShaderLanguages()` and the helper near line 266 both
+  add `Platform.Arm64Ohos` to the GLES_SM300+GLES_SM100 cluster
+  (Android-equivalent). Without this, bob-light's
+  `ShaderProgramBuilder.main()` NPEs because the returned set is
+  null, then `addAll(...)` blows up.
+
+### 2.20 Remaining link blocker — 3rd-party libs
+`PACKAGES_OHOS_64 = []` means we don't ship arm64-ohos prebuilts
+of the engine's required static libraries. The dmengine link step
+fails with:
+```
+ld.lld: error: unable to find library -lBulletDynamics
+ld.lld: error: unable to find library -lBulletCollision
+ld.lld: error: unable to find library -lLinearMath
+ld.lld: error: unable to find library -lbox2d_defold
+ld.lld: error: unable to find library -lluajit-5.1
+ld.lld: error: unable to find library -ltremolo
+ld.lld: error: unable to find library -ldmglfw
+```
+Each needs cross-compiling from source against the OHOS NDK +
+packaging as `packages/<name>-arm64-ohos.tar.gz`. Estimated effort:
+- bullet-2.77 (CMake, straightforward): 2-4h
+- box2d_defold (Defold's box2d fork, CMake): 1-2h
+- luajit-2.1.0 (most complex; needs cross-compile dance): 4-8h
+- tremolo (Vorbis decoder, makefile): 1-2h
+- dmglfw — see §3, this is the GLFW backend port (still placeholder)
+
+Also a stray `--enable-auto-import` MinGW linker flag is being
+emitted somewhere that ld.lld doesn't accept; needs to be filtered
+out of OHOS LINKFLAGS in `build_tools/waf_dynamo.py`.
+
 ---
 
 ## 3. Pending — Engine platform-layer port (PARTIAL / IN PROGRESS)
