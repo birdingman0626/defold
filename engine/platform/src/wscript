@@ -32,6 +32,18 @@ def build(bld):
                 target   = 'platform',
                 source   = sources)
 
+    elif bld.env.PLATFORM == 'arm64-ohos':
+        # OHOS-direct platform layer — bypasses GLFW. Implements
+        # dmPlatform::* via XComponent + EGL directly, and provides
+        # the dmPlatform::Ohos* surface that engine code expects on
+        # this target.
+        ohos_source = ['window.cpp', 'platform_window_ohos.cpp']
+        lib = bld.stlib(features = 'cxx c ddf',
+                        includes = '.',
+                        target   = 'platform',
+                        source   = bld.path.ant_glob(ohos_source))
+        glfw3_source_vulkan = None
+
     else:
         glfw_source = ['window.cpp', 'platform_window_glfw.cpp']
         glfw3_source_vulkan = None
@@ -51,11 +63,6 @@ def build(bld):
                 glfw_source += ['platform_window_glfw_android.cpp']
             elif bld.env.PLATFORM in ('x86_64-ios', 'arm64-ios'):
                 glfw_source += ['platform_window_glfw_ios.mm']
-            elif bld.env.PLATFORM == 'arm64-ohos':
-                # Placeholder. Returns NULL/0 for all dmPlatform::Ohos*
-                # functions until the real XComponent + EGL backend
-                # lands (FORK_NOTES.md §3).
-                glfw_source += ['platform_window_glfw_ohos.cpp']
 
         lib = bld.stlib(features = 'cxx c ddf',
                         includes = '.',
