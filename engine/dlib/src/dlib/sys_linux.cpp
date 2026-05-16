@@ -200,7 +200,11 @@ namespace dmSys
         struct utsname uts;
         uname(&uts);
 
+#if defined(DM_PLATFORM_OHOS)
+        dmStrlCpy(info->m_SystemName, "OHOS", sizeof(info->m_SystemName));
+#else
         dmStrlCpy(info->m_SystemName, "Linux", sizeof(info->m_SystemName));
+#endif
         dmStrlCpy(info->m_SystemVersion, uts.release, sizeof(info->m_SystemVersion));
 
         const char* default_lang = "en_US";
