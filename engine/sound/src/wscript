@@ -37,12 +37,11 @@ def build(bld):
     if 'android' in bld.env.PLATFORM:
         source += ['devices/device_opensl.cpp']
     elif 'ohos' in bld.env.PLATFORM:
-        # OHOS's NDK ships libOpenSLES.so headers/stubs but the runtime
-        # on the emulator (and reportedly on real devices) doesn't
-        # actually export slCreateEngine, so the link succeeds but
-        # dlopen fails. Use the null device for now — switch to
-        # libohaudio.so (OH_AudioRenderer) when we add real audio.
-        source += ['devices/device_null.cpp']
+        # Native OH_AudioRenderer backend (libohaudio.so). The OpenSL ES
+        # path Android uses is also present on OHOS but the runtime
+        # on emulator + real devices stubs slCreateEngine and the dlopen
+        # call fails at engine init.
+        source += ['devices/device_ohos.cpp']
     elif 'web' in bld.env.PLATFORM:
         source += ['devices/device_js.cpp']
     elif 'nx64' in bld.env.PLATFORM:

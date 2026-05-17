@@ -57,15 +57,5 @@ namespace dmDeviceNull
 
     DM_DECLARE_SOUND_DEVICE(NullSoundDevice, "null", DeviceNullOpen, DeviceNullClose, DeviceNullQueue,
                             DeviceNullFreeBufferSlots, 0, DeviceNullDeviceInfo, DeviceNullRestart, DeviceNullStop);
-
-#if defined(DM_PLATFORM_OHOS)
-    // OHOS uses the null device as the default audio backend until
-    // we wire libohaudio.so (OH_AudioRenderer). The engine resolves
-    // the default audio device by linking against the
-    // 'DefaultSoundDevice' symbol, so emit a second declaration that
-    // routes "default" -> the same null callbacks.
-    DM_DECLARE_SOUND_DEVICE(DefaultSoundDevice, "default", DeviceNullOpen, DeviceNullClose, DeviceNullQueue,
-                            DeviceNullFreeBufferSlots, 0, DeviceNullDeviceInfo, DeviceNullRestart, DeviceNullStop);
-#endif
 }
 
