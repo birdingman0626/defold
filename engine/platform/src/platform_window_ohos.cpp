@@ -113,6 +113,14 @@ namespace dmPlatform
         int32_t  m_MouseButtonPending;    // queued next state (-1 if none)
         int32_t  m_PrimaryTouchId;        // finger id driving the mouse, -1 if none
 
+        // Synthetic key state for the system back gesture → KEY_ESC
+        // pipeline. Same press/release-race pending pattern as the
+        // mouse button: a sub-frame ESC press+release would otherwise
+        // never surface as a value transition to the input layer.
+        uint8_t  m_KeyEscDown;
+        uint8_t  m_KeyEscDirty;
+        int32_t  m_KeyEscPending;
+
         // Keyboard/IME/gamepad callback slots (engine sets these but
         // we don't currently surface any events).
         FWindowAddKeyboardCharCallback   m_KeyboardCharCb;
@@ -183,6 +191,7 @@ namespace dmPlatform
             w->m_TouchPending[i] = -1;
         w->m_MouseButtonPending = -1;
         w->m_PrimaryTouchId     = -1;
+        w->m_KeyEscPending      = -1;
         pthread_mutex_init(&w->m_SurfaceMutex, NULL);
         pthread_cond_init(&w->m_SurfaceCv, NULL);
         g_Window = w;
@@ -485,7 +494,22 @@ namespace dmPlatform
         }
     }
 
-    int32_t GetKey(HWindow window, int32_t code)              { (void)window; (void)code; return 0; }
+    int32_t GetKey(HWindow window, int32_t code)
+    {
+        Window* w = (Window*)window;
+        if (!w) return 0;
+        // PLATFORM_KEY_ESC == 1; full constants declared further down.
+        if (code != 1) return 0;
+        int32_t value = (int32_t)w->m_KeyEscDown;
+        w->m_KeyEscDirty = 0;
+        if (w->m_KeyEscPending >= 0)
+        {
+            w->m_KeyEscDown    = (uint8_t)w->m_KeyEscPending;
+            w->m_KeyEscPending = -1;
+            w->m_KeyEscDirty   = 1;
+        }
+        return value;
+    }
     int32_t GetMouseButton(HWindow window, int32_t button)
     {
         Window* w = (Window*)window;
@@ -921,10 +945,53 @@ void OhosPlatform_PushTouchEvent(int32_t id, int32_t phase, float x, float y)
     }
 }
 
-uint32_t OhosPlatform_GetSurfaceHeight()
+void OhosPlatform_SetFocus(int32_t focused)
 {
+    // ArkTS UIAbility.onForeground/onBackground forwards here so the
+    // engine can pause sound + skip its render path while we're not
+    // the foreground app. dmHID.cpp's iconified path then takes over
+    // (see engine.cpp ~line 1900: !engine->m_WasIconified branch).
     using namespace dmPlatform;
-    return g_Window ? g_Window->m_Height : 0;
+    if (!g_Window) return;
+    bool f = focused != 0;
+    if (g_Window->m_Focused == f) return;
+    g_Window->m_Focused = f;
+    if (g_Window->m_FocusCb)
+    {
+        g_Window->m_FocusCb(g_Window->m_FocusUserData, f ? 1 : 0);
+    }
+}
+
+void OhosPlatform_PushKeyEvent(int32_t code, int32_t pressed)
+{
+    // Synthetic keyboard event from the ArkTS layer. Today only used
+    // for the system back-gesture → KEY_ESC bridge so a back swipe in
+    // the game/pause/settings screens fires vn.screens.on_menu_action.
+    // Extending to other keys means adding parallel state fields on
+    // the Window struct + GetKey switches.
+    using namespace dmPlatform;
+    if (!g_Window) return;
+    if (code != 1 /* PLATFORM_KEY_ESC */) return;
+
+    if (pressed)
+    {
+        g_Window->m_KeyEscDown    = 1;
+        g_Window->m_KeyEscDirty   = 1;
+        g_Window->m_KeyEscPending = -1;
+    }
+    else
+    {
+        if (g_Window->m_KeyEscDirty && g_Window->m_KeyEscDown == 1)
+        {
+            g_Window->m_KeyEscPending = 0;
+        }
+        else
+        {
+            g_Window->m_KeyEscDown    = 0;
+            g_Window->m_KeyEscDirty   = 1;
+            g_Window->m_KeyEscPending = -1;
+        }
+    }
 }
 
 } // extern "C"

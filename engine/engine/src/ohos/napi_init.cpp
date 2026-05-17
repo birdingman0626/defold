@@ -42,7 +42,8 @@ extern "C" {
     void OhosPlatform_SetNativeSurface(void* native_window, uint32_t width, uint32_t height);
     void OhosPlatform_ClearNativeSurface();
     void OhosPlatform_PushTouchEvent(int32_t id, int32_t phase, float x, float y);
-    uint32_t OhosPlatform_GetSurfaceHeight();
+    void OhosPlatform_PushKeyEvent(int32_t code, int32_t pressed);
+    void OhosPlatform_SetFocus(int32_t focused);
 
     // engine_main.cpp exposes a C-linkage `ohos_engine_main` wrapper
     // around the C++-linkage `engine_main`. We need the C name so
@@ -128,8 +129,8 @@ static void DispatchTouchEventCB(OH_NativeXComponent* xcomp, void* window)
     // so we hand the raw top-down y through and let the engine do the
     // flip (any extra flip here would double-invert and the GUI hit
     // tests would land below the button row instead of on it).
-    dmLogInfo("OHOS: touch %d phase=%d x=%.0f y=%.0f",
-              touch.id, engine_phase, touch.x, touch.y);
+    dmLogDebug("OHOS: touch %d phase=%d x=%.0f y=%.0f",
+               touch.id, engine_phase, touch.x, touch.y);
     OhosPlatform_PushTouchEvent(touch.id, engine_phase, touch.x, touch.y);
 }
 
@@ -163,6 +164,14 @@ static void* EngineThreadMain(void* arg)
     static char arg0_path[1280];
     snprintf(arg0_path, sizeof(arg0_path), "%s/dmengine", g_FilesDir);
     dmLogInfo("OHOS: engine resources path = %s", g_FilesDir);
+
+    // Anchor XDG / sys.get_save_file under filesDir so saves land in
+    // the app's writable per-app sandbox (survives reinstall unless
+    // user clears app data). sys_linux.cpp reads $XDG_DATA_HOME first,
+    // then $HOME/.local/share. Setting both keeps the path stable
+    // regardless of which lookup wins in future engine versions.
+    setenv("XDG_DATA_HOME", g_FilesDir, 1);
+    setenv("HOME", g_FilesDir, 1);
 
     char* argv[] = { arg0_path, NULL };
     int rc = ohos_engine_main(1, argv);
@@ -202,6 +211,34 @@ static napi_value EngineStop(napi_env env, napi_callback_info info)
     g_engine_running = 0;
     // pthread_join would block the JS thread; leave it to exit
     // naturally as the engine drains.
+    return NULL;
+}
+
+// Fires a synthetic ESC press+release into the engine. ArkTS calls
+// this from its onBackPress handler so the OHOS system back-gesture
+// flows through Defold's KEY_ESC → "menu" action mapping into
+// vn.screens.on_menu_action (pause/back-stack handling).
+static napi_value EngineBackPressed(napi_env env, napi_callback_info info)
+{
+    if (!g_engine_running) return NULL;
+    OhosPlatform_PushKeyEvent(1 /* PLATFORM_KEY_ESC */, 1);
+    OhosPlatform_PushKeyEvent(1 /* PLATFORM_KEY_ESC */, 0);
+    return NULL;
+}
+
+// Forward foreground/background transitions from the UIAbility into
+// the engine so dmSound can pause and the iconified frame-skip path
+// in engine.cpp kicks in. ArkTS calls engineSetFocus(true) from
+// onForeground and engineSetFocus(false) from onBackground.
+static napi_value EngineSetFocus(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = {0};
+    napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+    if (argc < 1) return NULL;
+    bool focused = false;
+    napi_get_value_bool(env, args[0], &focused);
+    OhosPlatform_SetFocus(focused ? 1 : 0);
     return NULL;
 }
 
@@ -274,9 +311,11 @@ EXTERN_C_START
 static napi_value Init(napi_env env, napi_value exports)
 {
     napi_property_descriptor desc[] = {
-        { "attachXComponent", NULL, AttachXComponent, NULL, NULL, NULL, napi_default, NULL },
-        { "engineStart",      NULL, EngineStart,      NULL, NULL, NULL, napi_default, NULL },
-        { "engineStop",       NULL, EngineStop,       NULL, NULL, NULL, napi_default, NULL },
+        { "attachXComponent",  NULL, AttachXComponent,  NULL, NULL, NULL, napi_default, NULL },
+        { "engineStart",       NULL, EngineStart,       NULL, NULL, NULL, napi_default, NULL },
+        { "engineStop",        NULL, EngineStop,        NULL, NULL, NULL, napi_default, NULL },
+        { "engineBackPressed", NULL, EngineBackPressed, NULL, NULL, NULL, napi_default, NULL },
+        { "engineSetFocus",    NULL, EngineSetFocus,    NULL, NULL, NULL, napi_default, NULL },
     };
     napi_define_properties(env, exports, sizeof(desc)/sizeof(desc[0]), desc);
     RegisterXComponentFromExports(env, exports);
