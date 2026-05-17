@@ -29,19 +29,21 @@
 #include "sound.h"
 #include "sound_private.h"
 
-// OHOS audio device backend.
+// OH_Audio device backend.
 //
-// Pulls from the same three-queue (Free → Ready → Playing) model the
-// OpenSL backend uses on Android, but OH_AudioRenderer drives the
-// pull from a write-data callback instead of an enqueue-driven one.
+// Wraps libohaudio.so (OH_AudioStreamBuilder + OH_AudioRenderer) the
+// same way device_opensl.cpp wraps OpenSL ES on Android: a three-queue
+// (Free → Ready → Active) model, with the render thread pulling
+// samples via a write-data callback rather than the enqueue-driven
+// model OpenSL uses.
 //
 // Engine thread:  DeviceQueue() pushes filled buffers from Free →
 //                 Ready (signals the renderer callback to consume).
-// Audio thread:   WriteDataCallback() pops Ready → Playing, memcpys
+// Audio thread:   WriteDataCallback() pops Ready → Active, memcpys
 //                 into the audioData buffer the OS asks for, then
-//                 pushes Playing → Free for the engine to reuse.
+//                 pushes Active → Free for the engine to reuse.
 
-namespace dmDeviceOhos
+namespace dmDeviceOhAudio
 {
     struct Buffer
     {
@@ -101,7 +103,7 @@ namespace dmDeviceOhos
         uint32_t Size() const { return m_Size; }
     };
 
-    struct OhosDevice
+    struct OhAudioDevice
     {
         uint32_t                m_MixRate;
         uint32_t                m_FrameCount;
@@ -127,7 +129,7 @@ namespace dmDeviceOhos
                                                           void*             audioData,
                                                           int32_t           audioDataSize)
     {
-        OhosDevice* dev = (OhosDevice*)userData;
+        OhAudioDevice* dev = (OhAudioDevice*)userData;
         int16_t*    out = (int16_t*)audioData;
         // OH_Audio asks for raw bytes; we're stereo 16-bit, so 4 bytes/frame.
         int32_t     frames_wanted = audioDataSize / 4;
@@ -172,7 +174,7 @@ namespace dmDeviceOhos
         return AUDIO_DATA_CALLBACK_RESULT_VALID;
     }
 
-    dmSound::Result DeviceOhosOpen(const dmSound::OpenDeviceParams* params, dmSound::HDevice* device)
+    dmSound::Result DeviceOhAudioOpen(const dmSound::OpenDeviceParams* params, dmSound::HDevice* device)
     {
         const uint32_t mix_rate     = 44100;
         const uint32_t channels     = 2;
@@ -197,7 +199,7 @@ namespace dmDeviceOhos
         OH_AudioStreamBuilder_SetLatencyMode(builder,  AUDIOSTREAM_LATENCY_MODE_NORMAL);
         OH_AudioStreamBuilder_SetRendererInfo(builder, AUDIOSTREAM_USAGE_GAME);
 
-        OhosDevice* dev = new OhosDevice();
+        OhAudioDevice* dev = new OhAudioDevice();
         memset(dev, 0, sizeof(*dev));
         dev->m_MixRate     = mix_rate;
         dev->m_FrameCount  = frame_count;
@@ -233,9 +235,9 @@ namespace dmDeviceOhos
         return dmSound::RESULT_OK;
     }
 
-    void DeviceOhosClose(dmSound::HDevice device)
+    void DeviceOhAudioClose(dmSound::HDevice device)
     {
-        OhosDevice* dev = (OhosDevice*)device;
+        OhAudioDevice* dev = (OhAudioDevice*)device;
         if (!dev) return;
         if (dev->m_Renderer)
         {
@@ -260,9 +262,9 @@ namespace dmDeviceOhos
         delete dev;
     }
 
-    dmSound::Result DeviceOhosQueue(dmSound::HDevice device, const void* samples, uint32_t sample_count)
+    dmSound::Result DeviceOhAudioQueue(dmSound::HDevice device, const void* samples, uint32_t sample_count)
     {
-        OhosDevice* dev = (OhosDevice*)device;
+        OhAudioDevice* dev = (OhAudioDevice*)device;
         if (!dev || !dev->m_IsPlaying) return dmSound::RESULT_INIT_ERROR;
 
         DM_MUTEX_SCOPED_LOCK(dev->m_Mutex);
@@ -276,25 +278,25 @@ namespace dmDeviceOhos
         return dmSound::RESULT_OK;
     }
 
-    uint32_t DeviceOhosFreeBufferSlots(dmSound::HDevice device)
+    uint32_t DeviceOhAudioFreeBufferSlots(dmSound::HDevice device)
     {
-        OhosDevice* dev = (OhosDevice*)device;
+        OhAudioDevice* dev = (OhAudioDevice*)device;
         if (!dev) return 0;
         DM_MUTEX_SCOPED_LOCK(dev->m_Mutex);
         return dev->m_Free.Size();
     }
 
-    void DeviceOhosDeviceInfo(dmSound::HDevice device, dmSound::DeviceInfo* info)
+    void DeviceOhAudioDeviceInfo(dmSound::HDevice device, dmSound::DeviceInfo* info)
     {
-        OhosDevice* dev = (OhosDevice*)device;
+        OhAudioDevice* dev = (OhAudioDevice*)device;
         info->m_MixRate          = dev->m_MixRate;
         info->m_FrameCount       = dev->m_FrameCount;
         info->m_DSPImplementation = dmSound::DSPIMPL_TYPE_CPU;
     }
 
-    void DeviceOhosStart(dmSound::HDevice device)
+    void DeviceOhAudioStart(dmSound::HDevice device)
     {
-        OhosDevice* dev = (OhosDevice*)device;
+        OhAudioDevice* dev = (OhAudioDevice*)device;
         if (!dev || dev->m_IsPlaying) return;
         OH_AudioStream_Result res = OH_AudioRenderer_Start(dev->m_Renderer);
         if (res != AUDIOSTREAM_SUCCESS)
@@ -305,16 +307,16 @@ namespace dmDeviceOhos
         dev->m_IsPlaying = true;
     }
 
-    void DeviceOhosStop(dmSound::HDevice device)
+    void DeviceOhAudioStop(dmSound::HDevice device)
     {
-        OhosDevice* dev = (OhosDevice*)device;
+        OhAudioDevice* dev = (OhAudioDevice*)device;
         if (!dev || !dev->m_IsPlaying) return;
         OH_AudioRenderer_Stop(dev->m_Renderer);
         dev->m_IsPlaying = false;
     }
 
     DM_DECLARE_SOUND_DEVICE(DefaultSoundDevice, "default",
-                            DeviceOhosOpen, DeviceOhosClose, DeviceOhosQueue,
-                            DeviceOhosFreeBufferSlots, 0, DeviceOhosDeviceInfo,
-                            DeviceOhosStart, DeviceOhosStop);
+                            DeviceOhAudioOpen, DeviceOhAudioClose, DeviceOhAudioQueue,
+                            DeviceOhAudioFreeBufferSlots, 0, DeviceOhAudioDeviceInfo,
+                            DeviceOhAudioStart, DeviceOhAudioStop);
 }

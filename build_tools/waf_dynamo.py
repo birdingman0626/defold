@@ -2215,12 +2215,13 @@ def detect(conf):
     elif TargetOS.ANDROID == target_os:
         conf.env['LIB_OPENAL'] = ['OpenSLES']
     elif TargetOS.OHOS == target_os:
-        # libohaudio.so exports OH_AudioStreamBuilder / OH_AudioRenderer
-        # which engine/sound/src/devices/device_ohos.cpp wraps. The
-        # 'ohaudio' shortname expands to libohaudio.so via the NDK
-        # sysroot. OpenSLES is also present in the NDK but the runtime
-        # stubs slCreateEngine, so we link OH_Audio only.
-        conf.env['LIB_OPENAL'] = ['ohaudio']
+        # OHOS has its own native audio API (libohaudio.so) — kept in a
+        # dedicated LIB_OHAUDIO env var so we don't overload LIB_OPENAL.
+        # device_ohaudio.cpp wraps OH_AudioStreamBuilder /
+        # OH_AudioRenderer. OpenSLES is also present in the NDK but the
+        # runtime stubs slCreateEngine, so we never link it.
+        conf.env['LIB_OPENAL']  = []
+        conf.env['LIB_OHAUDIO'] = ['ohaudio']
     elif TargetOS.LINUX == target_os:
         conf.env['LIB_OPENAL'] = ['openal']
 

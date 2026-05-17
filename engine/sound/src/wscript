@@ -37,11 +37,11 @@ def build(bld):
     if 'android' in bld.env.PLATFORM:
         source += ['devices/device_opensl.cpp']
     elif 'ohos' in bld.env.PLATFORM:
-        # Native OH_AudioRenderer backend (libohaudio.so). The OpenSL ES
-        # path Android uses is also present on OHOS but the runtime
-        # on emulator + real devices stubs slCreateEngine and the dlopen
-        # call fails at engine init.
-        source += ['devices/device_ohos.cpp']
+        # Native OH_AudioRenderer backend (libohaudio.so). OpenSL ES is
+        # also present in the OHOS NDK but the runtime stubs
+        # slCreateEngine — dlopen of libdmengine.so fails at engine
+        # init if we link OpenSL on this platform.
+        source += ['devices/device_ohaudio.cpp']
     elif 'web' in bld.env.PLATFORM:
         source += ['devices/device_js.cpp']
     elif 'nx64' in bld.env.PLATFORM:
