@@ -10,6 +10,16 @@ def build(bld):
                 use = 'TESTMAIN DLIB PROFILE_NULL platform_null',
                 target = 'test_platform')
 
+    # Host-runnable test for the OHOS input state machines extracted
+    # into platform_window_ohos_input.h. Pure header-only logic, so we
+    # only need TESTMAIN + DLIB to link — no EGL / XComponent / native
+    # window deps. Runs on whatever host the test suite runs on.
+    bld.program(features = 'cxx cprogram test',
+                includes = ['../../src'],
+                source   = 'test_platform_ohos.cpp',
+                use      = 'TESTMAIN DLIB PROFILE_NULL',
+                target   = 'test_platform_ohos')
+
 
     if bld.env.PLATFORM not in ['wasm-web', 'wasm_pthread-web']:
         if platform_supports_feature(bld.env.PLATFORM, "opengl", None):
