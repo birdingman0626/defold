@@ -32,9 +32,11 @@ else()
             list(APPEND _platform_glfw_sources "${PLAT_SRC_DIR}/platform_window_glfw3_win32.cpp")
         endif()
     elseif (TARGET_PLATFORM MATCHES "(arm64|x86_64)-ohos")
-        # OHOS-direct platform layer — bypasses GLFW entirely (engine
-        # doesn't actually need GLFW middleware on a HAP host). See
-        # FORK_NOTES.md §2.14.
+        # OHOS-direct platform layer. OpenHarmony apps host the engine
+        # through an XComponent in an ArkUI Stage (no Android-style
+        # NativeActivity wrapping the entire process), so we skip GLFW
+        # and talk to OH_NativeXComponent + EGL + OHNativeWindow
+        # directly — see platform_window_ohos.cpp's header comment.
         set(_platform_glfw_sources
             "${PLAT_SRC_DIR}/window.cpp"
             "${PLAT_SRC_DIR}/platform_window_ohos.cpp")

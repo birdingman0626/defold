@@ -19,9 +19,11 @@
 
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
-// OHOS native window comes from <native_window/external_window.h> via the
-// XComponent NAPI bindings (OH_NativeXComponent_GetNativeWindow). The full
-// surface acquisition flow is documented in FORK_NOTES.md §3.
+// OHOS native window comes from <native_window/external_window.h> via
+// OH_NativeXComponent_GetNativeWindow(). The full surface acquisition
+// flow (ArkTS attaches the XComponent → OnSurfaceCreated_CB →
+// OhosCreateEGLSurface) is documented at the top of
+// platform_window_ohos.cpp.
 
 namespace dmPlatform
 {
