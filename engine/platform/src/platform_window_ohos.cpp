@@ -274,10 +274,28 @@ namespace dmPlatform
         Window* w = (Window*)window;
         if (w->m_Opened) return WINDOW_RESULT_WINDOW_ALREADY_OPENED;
 
-        w->m_Width  = params.m_Width;
-        w->m_Height = params.m_Height;
+        // Project's logical resolution (e.g. 1920x1080 from
+        // game.project's display.width/height). Render scripts use
+        // this for their orthographic projection.
         w->m_OriginalWidth  = params.m_Width;
         w->m_OriginalHeight = params.m_Height;
+
+        // Physical render target dims. If the XComponent already
+        // delivered a surface size (typical — OnSurfaceCreated fires
+        // before engine_main reaches OpenWindow), use that. The GL
+        // viewport will get re-sized to this via the ResizeCallback
+        // a few lines below. Otherwise fall back to project dims
+        // and let the cv wait + ResizeCallback correct it.
+        if (w->m_NativeWindow && w->m_Width > 0 && w->m_Height > 0)
+        {
+            dmLogInfo("OHOS OpenWindow: project=%ux%u surface=%ux%u",
+                      params.m_Width, params.m_Height, w->m_Width, w->m_Height);
+        }
+        else
+        {
+            w->m_Width  = params.m_Width;
+            w->m_Height = params.m_Height;
+        }
 
         w->m_ResizeCb        = params.m_ResizeCallback;
         w->m_ResizeUserData  = params.m_ResizeCallbackUserData;
@@ -323,6 +341,16 @@ namespace dmPlatform
         if (!BindSurface(w)) return WINDOW_RESULT_WINDOW_OPEN_ERROR;
 
         w->m_Opened = true;
+
+        // Tell the engine about the actual XComponent surface size
+        // (typically larger than game.project's display.width/height
+        // on a tablet/2in1 emulator) so its viewport + render
+        // targets match. The render script does the
+        // logical->physical scaling.
+        if (w->m_ResizeCb && (w->m_Width != params.m_Width || w->m_Height != params.m_Height))
+        {
+            w->m_ResizeCb(w->m_ResizeUserData, w->m_Width, w->m_Height);
+        }
         return WINDOW_RESULT_OK;
     }
 
