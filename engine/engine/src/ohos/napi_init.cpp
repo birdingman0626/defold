@@ -24,10 +24,12 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <pthread.h>
+#include <unistd.h>
 
 #include <napi/native_api.h>
 #include <ace/xcomponent/native_interface_xcomponent.h>
@@ -119,11 +121,35 @@ static void DispatchTouchEventCB(OH_NativeXComponent* xcomp, void* window)
 // ──────────────────────────────────────────────────────────────────
 // Engine thread entry.
 
+// Set from ArkTS via dmengine.engineStart(filesDir). ArkTS owns the
+// rawfile -> filesDir extraction step (it has the
+// context.resourceManager API), then hands us the absolute path
+// where game.projectc / game.arci / game.arcd / game.dmanifest live.
+static char g_FilesDir[1024] = "";
+
 static void* EngineThreadMain(void* arg)
 {
     (void)arg;
-    char arg0[] = "dmengine";
-    char* argv[] = { arg0, NULL };
+
+    char cwd[1024] = "";
+    if (getcwd(cwd, sizeof(cwd))) dmLogInfo("OHOS: getcwd = %s", cwd);
+
+    if (g_FilesDir[0] == 0)
+    {
+        dmLogError("OHOS: engineStart called without a filesDir — no game.projectc to load");
+        g_engine_running = 0;
+        return NULL;
+    }
+
+    // Hand argv[0] = "<filesDir>/dmengine". dmSysPosix's
+    // GetResourcesPath() does dirname(argv[0]) so the engine ends up
+    // looking for game.projectc under <filesDir>/. The "dmengine"
+    // basename is a dummy — only the directory matters.
+    static char arg0_path[1280];
+    snprintf(arg0_path, sizeof(arg0_path), "%s/dmengine", g_FilesDir);
+    dmLogInfo("OHOS: engine resources path = %s", g_FilesDir);
+
+    char* argv[] = { arg0_path, NULL };
     int rc = ohos_engine_main(1, argv);
     dmLogInfo("OHOS: engine_main exited with code %d", rc);
     g_engine_running = 0;
@@ -136,6 +162,19 @@ static void* EngineThreadMain(void* arg)
 static napi_value EngineStart(napi_env env, napi_callback_info info)
 {
     if (g_engine_running) return NULL;
+
+    // First arg is the absolute path to the app's writable files
+    // directory (ArkTS already extracted game.projectc + .arc* into
+    // it). Required — see EngineThreadMain.
+    size_t argc = 1;
+    napi_value args[1] = {0};
+    napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+    if (argc >= 1)
+    {
+        size_t len = 0;
+        napi_get_value_string_utf8(env, args[0], g_FilesDir, sizeof(g_FilesDir), &len);
+    }
+
     g_engine_running = 1;
     pthread_create(&g_engine_thread, NULL, EngineThreadMain, NULL);
     return NULL;
@@ -184,6 +223,38 @@ static napi_value AttachXComponent(napi_env env, napi_callback_info info)
 // ──────────────────────────────────────────────────────────────────
 // Module init.
 
+// Resolve the framework-injected OH_NativeXComponent off `exports`
+// and register our surface lifecycle callbacks against it. This is
+// the path taken when ArkTS declares XComponent({libraryname:
+// 'dmengine', ...}) — OHOS plugs the XComponent into our module's
+// exports before Init runs. Doing it here (instead of from
+// ArkTS-side dmengine.attachXComponent) means our OnSurfaceCreated
+// callback is in place by the time the OHOS XComponent fires its
+// "surface created" event, which happens before ArkTS onLoad.
+static void RegisterXComponentFromExports(napi_env env, napi_value exports)
+{
+    napi_value export_instance = NULL;
+    if (napi_get_named_property(env, exports, OH_NATIVE_XCOMPONENT_OBJ, &export_instance) != napi_ok)
+    {
+        dmLogWarning("OHOS: no OH_NATIVE_XCOMPONENT_OBJ on exports — libraryname may not be 'dmengine'");
+        return;
+    }
+
+    OH_NativeXComponent* xcomp = NULL;
+    if (napi_unwrap(env, export_instance, (void**)&xcomp) != napi_ok || !xcomp)
+    {
+        dmLogWarning("OHOS: failed to unwrap OH_NativeXComponent from exports");
+        return;
+    }
+
+    g_xcomp_callback.OnSurfaceCreated   = OnSurfaceCreatedCB;
+    g_xcomp_callback.OnSurfaceChanged   = OnSurfaceChangedCB;
+    g_xcomp_callback.OnSurfaceDestroyed = OnSurfaceDestroyedCB;
+    g_xcomp_callback.DispatchTouchEvent = DispatchTouchEventCB;
+    OH_NativeXComponent_RegisterCallback(xcomp, &g_xcomp_callback);
+    dmLogInfo("OHOS: XComponent callbacks registered (libraryname path)");
+}
+
 EXTERN_C_START
 static napi_value Init(napi_env env, napi_value exports)
 {
@@ -193,6 +264,7 @@ static napi_value Init(napi_env env, napi_value exports)
         { "engineStop",       NULL, EngineStop,       NULL, NULL, NULL, napi_default, NULL },
     };
     napi_define_properties(env, exports, sizeof(desc)/sizeof(desc[0]), desc);
+    RegisterXComponentFromExports(env, exports);
     return exports;
 }
 EXTERN_C_END

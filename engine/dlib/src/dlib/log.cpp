@@ -295,6 +295,23 @@ static android_LogPriority ToAndroidPriority(LogSeverity severity)
 }
 #endif
 
+#if defined(DM_PLATFORM_OHOS)
+#include <hilog/log.h>
+static unsigned int ToHilogLevel(LogSeverity severity)
+{
+    switch (severity)
+    {
+        case LOG_SEVERITY_DEBUG:   return LOG_DEBUG;
+        case LOG_SEVERITY_USER_DEBUG:
+        case LOG_SEVERITY_INFO:    return LOG_INFO;
+        case LOG_SEVERITY_WARNING: return LOG_WARN;
+        case LOG_SEVERITY_ERROR:   return LOG_ERROR;
+        case LOG_SEVERITY_FATAL:   return LOG_FATAL;
+        default:                   return LOG_INFO;
+    }
+}
+#endif
+
 static void DoLogPlatform(LogSeverity severity, const char* output, int output_len)
 {
 #ifdef ANDROID
@@ -303,6 +320,11 @@ static void DoLogPlatform(LogSeverity severity, const char* output, int output_l
 // iOS
 #elif TARGET_OS_IOS==1
         dmLog::__ios_log_print(severity, output);
+#elif defined(DM_PLATFORM_OHOS)
+        // Route to hilog so 'hdc shell hilog -T defold' picks engine
+        // output up. Without this, dmLogInfo/Error go to stdout which
+        // is /dev/null inside a HAP.
+        OH_LOG_Print(LOG_APP, (LogLevel)ToHilogLevel(severity), 0xC000, "defold", "%{public}s", output);
 #endif
 
 #ifdef __EMSCRIPTEN__

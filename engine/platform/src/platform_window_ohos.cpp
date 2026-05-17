@@ -36,6 +36,9 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
+#include <time.h>
+#include <errno.h>
 
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -111,11 +114,31 @@ namespace dmPlatform
         bool       m_Opened;
         bool       m_Iconified;
         bool       m_Focused;
+
+        // The XComponent surface arrives asynchronously from the UI
+        // thread (napi_init.cpp's OnSurfaceCreatedCB). The engine
+        // thread blocks in OpenWindow() until m_NativeWindow is
+        // non-null. eglMakeCurrent must run on the engine thread that
+        // will later issue draws, NOT on the UI thread, so we never
+        // touch EGL from inside the napi callbacks.
+        pthread_mutex_t m_SurfaceMutex;
+        pthread_cond_t  m_SurfaceCv;
     };
 
     // The singleton window. OHOS apps have exactly one engine surface
     // (one XComponent per UIAbility) so we don't bother with a pool.
     static Window* g_Window = NULL;
+
+    // The XComponent surface lifecycle (OnSurfaceCreated) typically
+    // fires from the UI thread BEFORE the engine thread reaches
+    // NewWindow(). Cache the latest surface + dims here so NewWindow
+    // can adopt them on creation; otherwise OpenWindow's cv wait
+    // would time out because the SetNativeSurface call landed before
+    // g_Window even existed.
+    static pthread_mutex_t g_PendingSurfaceMutex = PTHREAD_MUTEX_INITIALIZER;
+    static NativeWindow*   g_PendingNativeWindow = NULL;
+    static uint32_t        g_PendingWidth        = 0;
+    static uint32_t        g_PendingHeight       = 0;
 
     HWindow NewWindow()
     {
@@ -133,7 +156,27 @@ namespace dmPlatform
         w->m_DisplayScaleFactor = 1.0f;
         w->m_SwapInterval = 1;
         w->m_Focused = true;
+        pthread_mutex_init(&w->m_SurfaceMutex, NULL);
+        pthread_cond_init(&w->m_SurfaceCv, NULL);
         g_Window = w;
+
+        // Adopt any surface that arrived from the XComponent UI
+        // callback before the engine got here. (Order is typical:
+        // OnSurfaceCreated → cached into g_Pending* → NewWindow
+        // → moved into w-> fields.) Without this OpenWindow's cv
+        // wait would time out even though the surface is available.
+        pthread_mutex_lock(&g_PendingSurfaceMutex);
+        if (g_PendingNativeWindow)
+        {
+            pthread_mutex_lock(&w->m_SurfaceMutex);
+            w->m_NativeWindow = g_PendingNativeWindow;
+            w->m_Width        = g_PendingWidth;
+            w->m_Height       = g_PendingHeight;
+            pthread_mutex_unlock(&w->m_SurfaceMutex);
+            dmLogInfo("OHOS NewWindow: adopted pending surface %ux%u",
+                      g_PendingWidth, g_PendingHeight);
+        }
+        pthread_mutex_unlock(&g_PendingSurfaceMutex);
 
         // Tell the NAPI module about us so it can route XComponent
         // callbacks back via OhosNapi_SetActiveSurface().
@@ -250,15 +293,34 @@ namespace dmPlatform
             return WINDOW_RESULT_WINDOW_OPEN_ERROR;
         }
 
-        // Surface may already be set if XComponent fired
-        // OnSurfaceCreated_CB before OpenWindow ran. Otherwise
-        // BindSurface() will be called again from
-        // OhosNapi_SetActiveSurface when the XComponent surface
-        // arrives.
-        if (w->m_NativeWindow)
+        // Block here on the engine thread until the XComponent
+        // surface is delivered by the UI thread
+        // (OhosPlatform_SetNativeSurface signals the cv). Required
+        // because eglMakeCurrent binds the context to the *calling*
+        // thread, so the engine thread must be the one to bind —
+        // otherwise the worker draws into an unbound context and
+        // every gl* call is a no-op (the original black-screen bug).
+        // Cap the wait at 5 s so we fail fast if the host never
+        // attaches.
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec += 5;
+
+        pthread_mutex_lock(&w->m_SurfaceMutex);
+        while (!w->m_NativeWindow)
         {
-            if (!BindSurface(w)) return WINDOW_RESULT_WINDOW_OPEN_ERROR;
+            int rc = pthread_cond_timedwait(&w->m_SurfaceCv, &w->m_SurfaceMutex, &ts);
+            if (rc == ETIMEDOUT) break;
         }
+        pthread_mutex_unlock(&w->m_SurfaceMutex);
+
+        if (!w->m_NativeWindow)
+        {
+            dmLogError("OHOS OpenWindow: timed out waiting for XComponent surface");
+            return WINDOW_RESULT_WINDOW_OPEN_ERROR;
+        }
+
+        if (!BindSurface(w)) return WINDOW_RESULT_WINDOW_OPEN_ERROR;
 
         w->m_Opened = true;
         return WINDOW_RESULT_OK;
@@ -596,14 +658,30 @@ extern "C" {
 void OhosPlatform_SetNativeSurface(NativeWindow* native_window, uint32_t width, uint32_t height)
 {
     using namespace dmPlatform;
+
+    // Always stash in g_Pending* so a surface arriving before
+    // NewWindow() runs gets picked up on creation. This is the
+    // common case because OnSurfaceCreated typically fires before
+    // ArkTS even gets to engineStart().
+    pthread_mutex_lock(&g_PendingSurfaceMutex);
+    g_PendingNativeWindow = native_window;
+    g_PendingWidth        = width;
+    g_PendingHeight       = height;
+    pthread_mutex_unlock(&g_PendingSurfaceMutex);
+
     if (!g_Window) return;
+
+    // Engine-thread side: hand the window to the engine's Window
+    // struct and signal OpenWindow's cv. EGL stays untouched here —
+    // eglMakeCurrent must run on the engine thread, NOT here on the
+    // UI thread, or the engine thread would have no current context.
+    pthread_mutex_lock(&g_Window->m_SurfaceMutex);
     g_Window->m_NativeWindow = native_window;
-    g_Window->m_Width  = width;
-    g_Window->m_Height = height;
-    if (g_Window->m_Opened && g_Window->m_Surface == EGL_NO_SURFACE)
-    {
-        BindSurface(g_Window);
-    }
+    g_Window->m_Width        = width;
+    g_Window->m_Height       = height;
+    pthread_cond_signal(&g_Window->m_SurfaceCv);
+    pthread_mutex_unlock(&g_Window->m_SurfaceMutex);
+
     if (g_Window->m_ResizeCb)
     {
         g_Window->m_ResizeCb(g_Window->m_ResizeUserData, width, height);
@@ -613,14 +691,18 @@ void OhosPlatform_SetNativeSurface(NativeWindow* native_window, uint32_t width, 
 void OhosPlatform_ClearNativeSurface()
 {
     using namespace dmPlatform;
+    pthread_mutex_lock(&g_PendingSurfaceMutex);
+    g_PendingNativeWindow = NULL;
+    pthread_mutex_unlock(&g_PendingSurfaceMutex);
+
     if (!g_Window) return;
-    if (g_Window->m_Display != EGL_NO_DISPLAY && g_Window->m_Surface != EGL_NO_SURFACE)
-    {
-        eglMakeCurrent(g_Window->m_Display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-        eglDestroySurface(g_Window->m_Display, g_Window->m_Surface);
-        g_Window->m_Surface = EGL_NO_SURFACE;
-    }
+    // Also UI thread. Don't tear down EGL here — only clear the
+    // pointer. Engine SwapBuffers will no-op once the engine thread
+    // notices m_NativeWindow gone; the teardown happens in
+    // CloseWindow() on the engine thread.
+    pthread_mutex_lock(&g_Window->m_SurfaceMutex);
     g_Window->m_NativeWindow = NULL;
+    pthread_mutex_unlock(&g_Window->m_SurfaceMutex);
 }
 
 void OhosPlatform_PushTouchEvent(int32_t id, int32_t phase, float x, float y)

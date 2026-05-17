@@ -39,6 +39,10 @@ namespace dmDeviceNull
     void DeviceNullDeviceInfo(dmSound::HDevice device, dmSound::DeviceInfo* info)
     {
         info->m_DSPImplementation = dmSound::DSPIMPL_TYPE_CPU;
+        // Without sane defaults sound.cpp ends up with m_MixRate=0
+        // and divides by zero a few lines later.
+        info->m_MixRate   = 44100;
+        info->m_FrameCount = 1024;
     }
 
     void DeviceNullRestart(dmSound::HDevice device)

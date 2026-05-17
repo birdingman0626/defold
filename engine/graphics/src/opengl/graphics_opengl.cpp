@@ -1455,7 +1455,7 @@ static void LogFrameBufferError(GLenum status)
         context->m_PipelineState    = GetDefaultPipelineState();
         context->m_PipelineStateDirty = context->m_PipelineState;
 
-#if defined(__EMSCRIPTEN__) || defined(__ANDROID__) || defined(DM_GRAPHICS_USE_OPENGLES)
+#if defined(__EMSCRIPTEN__) || defined(__ANDROID__) || defined(DM_GRAPHICS_USE_OPENGLES) || defined(DM_PLATFORM_OHOS)
         context->m_IsShaderLanguageGles = 1;
 
         const char* version = (char *) glGetString(GL_VERSION);
