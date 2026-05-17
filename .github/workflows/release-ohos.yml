@@ -1,0 +1,177 @@
+name: Release OHOS engine binaries
+
+# Triggered by pushing a tag matching v*-ohos.*. Builds libdmengine.so
+# for arm64-ohos + x86_64-ohos, uploads each as a per-platform artifact,
+# then publishes a GitHub Release on this fork with both .so files
+# attached.
+#
+# Repository secret OHOS_SDK_URL must be set: a downloadable URL to a
+# zipped OpenHarmony Native SDK whose extraction produces a `native/`
+# directory containing llvm/, sysroot/, etc. The local dev workflow
+# uses DevEco Studio's bundled SDK at
+# sdk/default/openharmony/native — package that directory and upload
+# somewhere fetchable (e.g. a private S3 / GH release asset on a
+# scratch repo) and point the secret at it.
+
+on:
+  push:
+    tags:
+      - 'v*-ohos.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish (must already exist on the branch)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ['arm64-ohos', 'x86_64-ohos']
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+
+      - name: Cache Defold downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.dcache
+          key: ${{ runner.os }}-${{ matrix.platform }}-dcache-${{ hashFiles('build_tools/sdk.py') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.platform }}-dcache-
+            ${{ runner.os }}-dcache-
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+
+      - name: Install CMake + Ninja
+        uses: lukka/get-cmake@latest
+
+      - name: Cache OHOS Native SDK
+        id: cache-ohos-sdk
+        uses: actions/cache@v4
+        with:
+          # OHOS_SDK_URL's value determines which build of the SDK we
+          # use; hashing the secret in the cache key would leak it via
+          # the cache scope name, so we key on the URL's last path
+          # component instead. Bump the URL filename to invalidate.
+          path: ~/ohos
+          key: ohos-sdk-${{ hashFiles('.github/workflows/release-ohos.yml') }}
+
+      - name: Install OHOS Native SDK
+        if: steps.cache-ohos-sdk.outputs.cache-hit != 'true'
+        env:
+          OHOS_SDK_URL: ${{ secrets.OHOS_SDK_URL }}
+        run: |
+          if [ -z "$OHOS_SDK_URL" ]; then
+            echo "::error::OHOS_SDK_URL repo secret is not set. See .github/workflows/release-ohos.yml header comment."
+            exit 1
+          fi
+          mkdir -p $HOME/ohos
+          curl -sL "$OHOS_SDK_URL" -o /tmp/ohos-sdk.zip
+          unzip -q /tmp/ohos-sdk.zip -d $HOME/ohos
+          # Some SDK packagings put native/ at the top level; others
+          # wrap it in an extra directory. Find the real one.
+          if [ -d "$HOME/ohos/native" ]; then
+            true  # already at expected layout
+          else
+            real=$(find $HOME/ohos -maxdepth 3 -type d -name native | head -n1)
+            if [ -z "$real" ]; then
+              echo "::error::Couldn't find a native/ directory inside the SDK zip."
+              exit 1
+            fi
+            ln -sf "$real" "$HOME/ohos/native"
+          fi
+          test -d $HOME/ohos/native/llvm/bin || (echo "::error::native/llvm/bin missing"; exit 1)
+
+      - name: Export SDK env
+        run: |
+          echo "OHOS_NDK_PATH=$HOME/ohos/native"                 >> $GITHUB_ENV
+          echo "OHOS_NDK_BIN_PATH=$HOME/ohos/native/llvm/bin"    >> $GITHUB_ENV
+          echo "OHOS_NDK_SYSROOT=$HOME/ohos/native/sysroot"      >> $GITHUB_ENV
+          echo "$HOME/ohos/native/llvm/bin"                      >> $GITHUB_PATH
+
+      - name: Install Defold build deps
+        run: ci/ci.sh install --platform=${{ matrix.platform }}
+
+      - name: Build engine .so
+        run: |
+          python scripts/build.py \
+            --platform=${{ matrix.platform }} \
+            --skip-tests --skip-builtins --skip-docs \
+            build_engine -- --skip-build-tests
+
+      - name: Verify libdmengine.so exists
+        run: |
+          out=tmp/dynamo_home/bin/${{ matrix.platform }}/libdmengine.so
+          test -f "$out" || (echo "::error::$out not produced"; exit 1)
+          ls -la "$out"
+
+      - name: Upload .so artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libdmengine-${{ matrix.platform }}
+          path: tmp/dynamo_home/bin/${{ matrix.platform }}/libdmengine.so
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Stop Gradle Daemon
+        if: always()
+        run: com.dynamo.cr/com.dynamo.cr.bob/gradlew --stop || true
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Rename per-platform .so so the release lists them clearly
+        run: |
+          mkdir release
+          cp artifacts/libdmengine-arm64-ohos/libdmengine.so    release/libdmengine-arm64-ohos.so
+          cp artifacts/libdmengine-x86_64-ohos/libdmengine.so   release/libdmengine-x86_64-ohos.so
+          (cd release && sha256sum *.so > SHA256SUMS.txt)
+          ls -la release
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          body: |
+            Native OpenHarmony / HarmonyOS Next engine binaries.
+
+            Built from this commit via the fork's
+            `.github/workflows/release-ohos.yml` workflow. Drop the
+            matching `.so` into your HAP's
+            `entry/libs/<arch>/libdmengine.so`:
+              * `libdmengine-arm64-ohos.so`  → `entry/libs/arm64-v8a/libdmengine.so`
+              * `libdmengine-x86_64-ohos.so` → `entry/libs/x86_64/libdmengine.so`
+
+            See `SHA256SUMS.txt` for integrity checks.
+          files: |
+            release/libdmengine-arm64-ohos.so
+            release/libdmengine-x86_64-ohos.so
+            release/SHA256SUMS.txt
