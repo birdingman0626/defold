@@ -42,6 +42,7 @@ extern "C" {
     void OhosPlatform_SetNativeSurface(void* native_window, uint32_t width, uint32_t height);
     void OhosPlatform_ClearNativeSurface();
     void OhosPlatform_PushTouchEvent(int32_t id, int32_t phase, float x, float y);
+    uint32_t OhosPlatform_GetSurfaceHeight();
 
     // engine_main.cpp exposes a C-linkage `ohos_engine_main` wrapper
     // around the C++-linkage `engine_main`. We need the C name so
@@ -63,14 +64,15 @@ static OH_NativeXComponent_Callback g_xcomp_callback = {};
 static pthread_t                    g_engine_thread  = 0;
 static volatile int                 g_engine_running = 0;
 
-// Touch phase values for the engine's HID layer.
-// Defold's WindowTouchData::m_Phase uses 0=Pressed, 1=Moved,
-// 2=Released, 3=Cancelled (see hid.h DM_INPUT_PHASE_*).
+// Touch phase values, mirrored from dmHID::Phase
+// (see engine/hid/src/dmsdk/hid/hid.h): BEGAN=0, MOVED=1,
+// STATIONARY=2, ENDED=3, CANCELLED=4. HID copies these straight
+// from WindowTouchData::m_Phase, so the wire values must match.
 enum {
     OHOS_PHASE_PRESSED   = 0,
     OHOS_PHASE_MOVED     = 1,
-    OHOS_PHASE_RELEASED  = 2,
-    OHOS_PHASE_CANCELLED = 3,
+    OHOS_PHASE_RELEASED  = 3,
+    OHOS_PHASE_CANCELLED = 4,
 };
 
 // ──────────────────────────────────────────────────────────────────
@@ -104,7 +106,11 @@ static void DispatchTouchEventCB(OH_NativeXComponent* xcomp, void* window)
     (void)window;
     OH_NativeXComponent_TouchEvent touch = {};
     int32_t res = OH_NativeXComponent_GetTouchEvent(xcomp, window, &touch);
-    if (res != 0) return;
+    if (res != 0)
+    {
+        dmLogWarning("OHOS: GetTouchEvent failed: %d", res);
+        return;
+    }
 
     int32_t engine_phase = OHOS_PHASE_MOVED;
     switch (touch.type)
@@ -115,6 +121,15 @@ static void DispatchTouchEventCB(OH_NativeXComponent* xcomp, void* window)
         case OH_NATIVEXCOMPONENT_CANCEL: engine_phase = OHOS_PHASE_CANCELLED; break;
         default: return;
     }
+    // OHOS XComponent reports touch in surface coords with origin
+    // top-left. That's exactly what engine.cpp's GOActionCallback
+    // expects when it does `input_action.m_Y = m_Height - action_y *
+    // height_ratio` to convert into Defold's bottom-up design coords —
+    // so we hand the raw top-down y through and let the engine do the
+    // flip (any extra flip here would double-invert and the GUI hit
+    // tests would land below the button row instead of on it).
+    dmLogInfo("OHOS: touch %d phase=%d x=%.0f y=%.0f",
+              touch.id, engine_phase, touch.x, touch.y);
     OhosPlatform_PushTouchEvent(touch.id, engine_phase, touch.x, touch.y);
 }
 
@@ -215,8 +230,8 @@ static napi_value AttachXComponent(napi_env env, napi_callback_info info)
     g_xcomp_callback.OnSurfaceChanged   = OnSurfaceChangedCB;
     g_xcomp_callback.OnSurfaceDestroyed = OnSurfaceDestroyedCB;
     g_xcomp_callback.DispatchTouchEvent = DispatchTouchEventCB;
-    OH_NativeXComponent_RegisterCallback(xcomp, &g_xcomp_callback);
-    dmLogInfo("OHOS: XComponent callbacks registered");
+    int32_t rc = OH_NativeXComponent_RegisterCallback(xcomp, &g_xcomp_callback);
+    dmLogInfo("OHOS: XComponent callbacks registered (attach path), xcomp=%p rc=%d", xcomp, rc);
     return NULL;
 }
 
@@ -251,8 +266,8 @@ static void RegisterXComponentFromExports(napi_env env, napi_value exports)
     g_xcomp_callback.OnSurfaceChanged   = OnSurfaceChangedCB;
     g_xcomp_callback.OnSurfaceDestroyed = OnSurfaceDestroyedCB;
     g_xcomp_callback.DispatchTouchEvent = DispatchTouchEventCB;
-    OH_NativeXComponent_RegisterCallback(xcomp, &g_xcomp_callback);
-    dmLogInfo("OHOS: XComponent callbacks registered (libraryname path)");
+    int32_t rc = OH_NativeXComponent_RegisterCallback(xcomp, &g_xcomp_callback);
+    dmLogInfo("OHOS: XComponent callbacks registered (libraryname path), xcomp=%p rc=%d", xcomp, rc);
 }
 
 EXTERN_C_START

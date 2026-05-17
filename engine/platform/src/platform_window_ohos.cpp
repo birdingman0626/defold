@@ -87,8 +87,31 @@ namespace dmPlatform
         // Touch state — populated by napi_init.cpp via the
         // DispatchTouchEvent_CB callback. Engine consumes via
         // GetTouchData() each frame.
+        //
+        // m_TouchPending mirrors m_TouchData and stores a queued phase
+        // (or -1) that PushTouchEvent fills in when an UP/CANCEL arrives
+        // before the engine had a chance to poll the BEGAN. We need this
+        // because the OHOS x86_64 emulator runs the engine at ~1 fps, so
+        // a 100 ms tap will start and end within one frame; without
+        // queueing, GetTouchData would see only the final ENDED phase
+        // and the input layer never observes a 0→1→0 transition.
         WindowTouchData m_TouchData[MAX_TOUCH_POINTS];
+        int32_t         m_TouchPending[MAX_TOUCH_POINTS];
         uint32_t        m_TouchCount;
+
+        // Mouse emulation from the primary finger — mirrors what the
+        // Android glfw shim does (external/glfw/lib/android/android_init.c
+        // ~line 583). Defold's mouse_trigger MOUSE_BUTTON_LEFT mapping is
+        // how taps reach gui_scripts (e.g. main_menu's New Game button)
+        // on touch-only platforms; without this, only the synthetic
+        // gesture-classifier path fires and that one bypasses Defold's
+        // on_input dispatch.
+        int32_t  m_MouseX;
+        int32_t  m_MouseY;
+        uint8_t  m_MouseButtonLeft;       // 0/1, current state
+        uint8_t  m_MouseButtonLeftDirty;  // 1 if state changed since last GetMouseButton
+        int32_t  m_MouseButtonPending;    // queued next state (-1 if none)
+        int32_t  m_PrimaryTouchId;        // finger id driving the mouse, -1 if none
 
         // Keyboard/IME/gamepad callback slots (engine sets these but
         // we don't currently surface any events).
@@ -156,6 +179,10 @@ namespace dmPlatform
         w->m_DisplayScaleFactor = 1.0f;
         w->m_SwapInterval = 1;
         w->m_Focused = true;
+        for (uint32_t i = 0; i < MAX_TOUCH_POINTS; ++i)
+            w->m_TouchPending[i] = -1;
+        w->m_MouseButtonPending = -1;
+        w->m_PrimaryTouchId     = -1;
         pthread_mutex_init(&w->m_SurfaceMutex, NULL);
         pthread_cond_init(&w->m_SurfaceCv, NULL);
         g_Window = w;
@@ -459,9 +486,35 @@ namespace dmPlatform
     }
 
     int32_t GetKey(HWindow window, int32_t code)              { (void)window; (void)code; return 0; }
-    int32_t GetMouseButton(HWindow window, int32_t button)    { (void)window; (void)button; return 0; }
+    int32_t GetMouseButton(HWindow window, int32_t button)
+    {
+        Window* w = (Window*)window;
+        if (!w) return 0;
+        // dmHID maps mouse button 0 = MOUSE_BUTTON_LEFT (see hid.h).
+        if (button != 0) return 0;
+        int32_t value = (int32_t)w->m_MouseButtonLeft;
+        w->m_MouseButtonLeftDirty = 0;
+        // Promote a queued release/press now that the current state has
+        // been observed by the HID poll. Without this, a sub-frame tap
+        // would only ever surface as a steady-press (we'd return 1 here,
+        // then on the next call still return 1) and the input layer
+        // would never see the 1→0 transition that triggers `released`.
+        if (w->m_MouseButtonPending >= 0)
+        {
+            w->m_MouseButtonLeft       = (uint8_t)w->m_MouseButtonPending;
+            w->m_MouseButtonPending    = -1;
+            w->m_MouseButtonLeftDirty  = 1;
+        }
+        return value;
+    }
     int32_t GetMouseWheel(HWindow window)                     { (void)window; return 0; }
-    void    GetMousePosition(HWindow window, int32_t* x, int32_t* y) { (void)window; *x=0; *y=0; }
+    void    GetMousePosition(HWindow window, int32_t* x, int32_t* y)
+    {
+        Window* w = (Window*)window;
+        if (!w || !x || !y) { if (x) *x = 0; if (y) *y = 0; return; }
+        *x = w->m_MouseX;
+        *y = w->m_MouseY;
+    }
 
     uint32_t GetTouchData(HWindow window, WindowTouchData* touch_data, uint32_t touch_data_count)
     {
@@ -472,7 +525,36 @@ namespace dmPlatform
         {
             touch_data[i] = w->m_TouchData[i];
         }
-        w->m_TouchCount = 0;
+
+        // Post-report state transition (dmHID::Phase: BEGAN=0, MOVED=1,
+        // ENDED=3, CANCELLED=4). Each slot follows BEGAN → MOVED →
+        // (optional repeats of MOVED) → ENDED/CANCELLED → drop. If a
+        // pending phase is queued (because UP arrived before BEGAN was
+        // polled), promote it now instead of demoting BEGAN→MOVED.
+        uint32_t write = 0;
+        for (uint32_t i = 0; i < w->m_TouchCount; ++i)
+        {
+            WindowTouchData& t = w->m_TouchData[i];
+            int32_t&         p = w->m_TouchPending[i];
+            if (t.m_Phase == 3 || t.m_Phase == 4) continue; // drop after report
+            if (p >= 0)
+            {
+                t.m_Phase = p;
+                p = -1;
+            }
+            else if (t.m_Phase == 0)
+            {
+                t.m_Phase = 1; // BEGAN → MOVED
+            }
+            if (write != i)
+            {
+                w->m_TouchData[write]    = t;
+                w->m_TouchPending[write] = p;
+            }
+            ++write;
+        }
+        w->m_TouchCount = write;
+
         return n;
     }
 
@@ -735,14 +817,114 @@ void OhosPlatform_ClearNativeSurface()
 
 void OhosPlatform_PushTouchEvent(int32_t id, int32_t phase, float x, float y)
 {
+    // The engine consumes touch data as a "current state of N active
+    // fingers" snapshot, not an event log. Keep ONE entry per finger
+    // ID and update its phase as events arrive — otherwise a fast tap
+    // (DOWN + UP within one frame) would land in action.touch as two
+    // entries with the same id and gesture recognisers would count it
+    // as a 2-finger tap.
+    //
+    // The catch: GetTouchData might not run between DOWN and UP at all
+    // (on the OHOS x86_64 emulator the engine renders at ~1 fps). If
+    // we just overwrote BEGAN with ENDED, the input layer would only
+    // see m_Value=0 and never observe a press/release transition. So
+    // when an UP/CANCEL arrives while BEGAN is still unpolled, queue
+    // it on m_TouchPending instead of clobbering m_Phase. GetTouchData
+    // will then promote the slot through BEGAN → ENDED over two
+    // consecutive frames.
+    //
+    // We also drive a synthetic mouse-left button from the primary
+    // finger so MOUSE_BUTTON_LEFT-bound input actions (e.g. the
+    // "advance" trigger that picks main_menu buttons) fire on tap.
+    // This mirrors Android's GLFW behaviour
+    // (external/glfw/lib/android/android_init.c, g_MouseEmulationTouch).
     using namespace dmPlatform;
     if (!g_Window) return;
-    if (g_Window->m_TouchCount >= MAX_TOUCH_POINTS) return;
-    WindowTouchData& t = g_Window->m_TouchData[g_Window->m_TouchCount++];
-    t.m_Id    = id;
-    t.m_Phase = phase;
-    t.m_X     = (int32_t)x;
-    t.m_Y     = (int32_t)y;
+
+    // dmHID::Phase: BEGAN=0, MOVED=1, ENDED=3, CANCELLED=4.
+    bool is_down = (phase == 0);
+    bool is_up   = (phase == 3 || phase == 4);
+
+    int slot = -1;
+    for (uint32_t i = 0; i < g_Window->m_TouchCount; ++i)
+    {
+        if (g_Window->m_TouchData[i].m_Id == id)
+        {
+            slot = (int)i;
+            break;
+        }
+    }
+    if (slot < 0)
+    {
+        if (g_Window->m_TouchCount >= MAX_TOUCH_POINTS) return;
+        slot = (int)g_Window->m_TouchCount++;
+        WindowTouchData& nt = g_Window->m_TouchData[slot];
+        nt.m_Id    = id;
+        nt.m_Phase = phase;
+        nt.m_X     = (int32_t)x;
+        nt.m_Y     = (int32_t)y;
+        g_Window->m_TouchPending[slot] = -1;
+    }
+    else
+    {
+        WindowTouchData& t = g_Window->m_TouchData[slot];
+        t.m_X = (int32_t)x;
+        t.m_Y = (int32_t)y;
+        if (t.m_Phase == 0 && is_up)
+        {
+            // BEGAN not yet polled — queue UP for the frame after next.
+            g_Window->m_TouchPending[slot] = phase;
+        }
+        else
+        {
+            t.m_Phase = phase;
+        }
+    }
+
+    // Mouse emulation: track the *primary* finger (the first one down
+    // while no other was active) and translate its events into the
+    // mouse-position + left-button state machine that HID samples each
+    // frame in hid_native.cpp ~line 270.
+    if (is_down && g_Window->m_PrimaryTouchId < 0)
+    {
+        g_Window->m_PrimaryTouchId = id;
+    }
+
+    bool is_primary = (g_Window->m_PrimaryTouchId == id);
+    if (is_primary)
+    {
+        g_Window->m_MouseX = (int32_t)x;
+        g_Window->m_MouseY = (int32_t)y;
+        if (is_down)
+        {
+            g_Window->m_MouseButtonLeft      = 1;
+            g_Window->m_MouseButtonLeftDirty = 1;
+            g_Window->m_MouseButtonPending   = -1;
+        }
+        else if (is_up)
+        {
+            // Same race as touch: if a press is still in m_MouseButtonLeft
+            // that the HID poll hasn't read yet, defer the release so the
+            // input layer observes the 0→1→0 transition over two frames.
+            if (g_Window->m_MouseButtonLeftDirty && g_Window->m_MouseButtonLeft == 1)
+            {
+                g_Window->m_MouseButtonPending = 0;
+            }
+            else
+            {
+                g_Window->m_MouseButtonLeft      = 0;
+                g_Window->m_MouseButtonLeftDirty = 1;
+                g_Window->m_MouseButtonPending   = -1;
+            }
+            g_Window->m_PrimaryTouchId = -1;
+        }
+    }
+}
+
+uint32_t OhosPlatform_GetSurfaceHeight()
+{
+    using namespace dmPlatform;
+    return g_Window ? g_Window->m_Height : 0;
 }
 
 } // extern "C"
